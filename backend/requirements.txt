@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]        # 로컬 실행/리로드 + dotenv 포함
+gunicorn                 # 리눅스 서버에서만 사용(Windows는 X)
+sqlalchemy>=2.0
+pydantic>=2.6
+python-multipart         # 파일 업로드
+requests                 # CLOVA/Gemini 호출
+qrcode[pil]              # QR 생성 (Pillow 포함)
+python-dateutil          # TTL/날짜 유틸 (선호)
+google-generativeai
+python-dotenv
