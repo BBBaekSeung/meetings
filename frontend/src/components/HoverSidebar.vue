@@ -1,37 +1,24 @@
 <!-- src/components/HoverSidebar.vue -->
 <template>
-  <!-- 전체 wrapper -->
-  <div class="fixed inset-y-0 left-0 z-40 flex">
-    <!-- 토글 버튼 (항상 보이는 아이콘) -->
-    <button
-      class="m-2 p-2 bg-gray-300 hover:bg-gray-400 rounded-md shadow cursor-pointer"
-      title="회의 목록"
-      @click="isOpen = !isOpen"
-    >
-      <!-- 예: 햄버거 아이콘 -->
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        class="h-6 w-6"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-          d="M4 6h16M4 12h16M4 18h16" />
-      </svg>
-    </button>
+  <!-- 토글 버튼 (왼쪽 상단 고정) -->
+  <button
+    class="fixed top-2 left-2 z-50 p-2 bg-gray-300 hover:bg-gray-400 rounded-md shadow cursor-pointer flex items-center justify-center"
+    @click="isOpen = !isOpen"
+  >
+  <i class="fi fi-bs-menu-dots text-2xl text-gray-700 leading-none"></i>
+  </button>
 
-    <!-- 사이드바 패널 -->
-    <transition name="slide">
-      <aside
-        v-if="isOpen"
-        class="h-full w-[280px] bg-white border-r shadow-sm p-3 overflow-y-auto"
-      >
-        <MeetingListSidebar />
-      </aside>
-    </transition>
-  </div>
+  <!-- 사이드바 패널 -->
+  <transition name="slide">
+    <aside
+      v-if="isOpen"
+      class="fixed inset-y-0 left-0 z-40 w-[280px] bg-white border-r shadow-sm p-3 overflow-y-auto"
+    >
+      <MeetingListSidebar />
+    </aside>
+  </transition>
 </template>
+
 
 <script setup lang="ts">
 import { ref } from 'vue'

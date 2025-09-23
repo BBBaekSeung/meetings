@@ -2,8 +2,7 @@
 import enum, uuid, json
 from datetime import datetime, date, timezone
 from sqlalchemy import (
-    Column, String, DateTime, Integer, Date,
-    ForeignKey, Index
+    Column, Integer, String, Date, DateTime, Boolean, Enum, ForeignKey, func, Index, UniqueConstraint
 )
 from sqlalchemy.types import TypeDecorator, TEXT
 from sqlalchemy.orm import relationship
@@ -59,7 +58,7 @@ class TaskStatus(str, enum.Enum):
 
     def label(self) -> str:
         return {
-            "todo": "대기",
+            "todo": "요청",
             "in_progress": "진행",
             "feedback": "피드백",
             "on_hold": "보류",
@@ -118,7 +117,8 @@ class Task(Base):
     status    = Column(SAEnum(TaskStatus, native_enum=False), nullable=False, default=TaskStatus.TODO)
     task_type = Column(SAEnum(TaskType,    native_enum=False), nullable=False, default=TaskType.GENERAL)
     priority  = Column(SAEnum(Priority,    native_enum=False), nullable=True)
-
+    details_json = Column(JSONUnicode, nullable=True)
+    
     # 시간(분)
     work_time_min = Column(Integer, nullable=False, default=0)
 
@@ -133,6 +133,67 @@ class Task(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
     meeting  = relationship("Meeting", back_populates="actions")
+
+
+# -----------------------------
+# Checklist (체크리스트 항목)
+# -----------------------------
+class ChecklistItem(Base):
+    __tablename__ = "checklist_items"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), index=True, nullable=False)
+    label = Column(String(512), nullable=False)
+    is_done = Column(Boolean, nullable=False, default=False)
+    order = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (Index("ix_checklist_task_order", "task_id", "order"),)
+
+# (선택) 역방향 관계 — 필요시 주석 해제
+# Task.checklist_items = relationship(
+#     "ChecklistItem",
+#     cascade="all, delete-orphan",
+#     order_by="ChecklistItem.order",
+#     passive_deletes=True,
+# )
+
+# 투표기능class VoteOption(Base):
+    __tablename__ = "vote_options"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), index=True, nullable=False)
+    label = Column(String(256), nullable=False)
+
+class VoteBallot(Base):
+    __tablename__ = "vote_ballots"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), index=True, nullable=False)
+    option_id = Column(Integer, ForeignKey("vote_options.id", ondelete="CASCADE"), nullable=False)
+    voter = Column(String(128), nullable=False)  # 사용자 ID 또는 세션/토큰
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('task_id', 'voter', name='uq_vote_once_per_voter'),  # 1인 1표
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # 인덱스(필요한 것만)
 Index("ix_tasks_meeting_due", Task.meeting_id, Task.due_date)

@@ -1,14 +1,25 @@
-<!-- src/components/MeetingListSidebar.vue (간단 버전) -->
+<!-- src/components/MeetingListSidebar.vue -->
 <template>
-  <aside class="md:sticky md:top-4 space-y-3">
-    <div class="flex items-center gap-2">
+  <!-- 상단 여백을 주어 전체를 조금 아래로 -->
+  <aside class="md:sticky md:top-4 space-y-3 pt-5">
+    <!-- 검색/리프레시 행도 추가로 아래로 -->
+    <div class="mt-3 flex items-center gap-2">
       <input
         v-model="keyword"
-        class="w-full border rounded-lg px-3 py-1.5"
+        class="w-full border rounded-lg px-3 py-2.5"
         placeholder="회의 검색"
         @keyup.enter="refetch()"
       />
-      <button class="px-3 py-1 rounded-lg border" @click="refetch()">새로고침</button>
+
+      <!-- 아이콘 버튼: 가운데 정렬 & baseline 보정 -->
+      <button
+        class="inline-flex items-center justify-center p-2.5 rounded-lg border hover:bg-gray-50 shadow-sm"
+        title="새로고침"
+        aria-label="새로고침"
+        @click="refetch()"
+      >
+        <i class="fi fi-bs-refresh text-xl leading-none"></i>
+      </button>
     </div>
 
     <div v-if="isLoading" class="text-sm text-gray-500">불러오는 중…</div>
@@ -48,7 +59,6 @@ const filtered = computed(() => {
 function formatDate(s?: string) {
   if (!s) return ''
   try { 
-    // 백엔드가 +09:00로 내려주면 이거면 충분
     return new Date(s).toLocaleString('ko-KR')
   } catch { 
     return s 

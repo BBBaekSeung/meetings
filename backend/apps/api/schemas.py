@@ -75,3 +75,50 @@ class MeetingCreateResponse(BaseConfig):
     progress: int
     mobile_url: str | Optional[str] = None
     qr_data_uri: str | Optional[str] = None
+
+# -----------------------------
+# Checklist schemas
+# -----------------------------
+class ChecklistItemOut(BaseModel):
+    id: int
+    label: str
+    is_done: bool
+    order: int
+    created_at: datetime
+    updated_at: datetime
+    class Config:
+        orm_mode = True
+
+class ChecklistItemCreate(BaseModel):
+    label: str
+
+class ChecklistItemUpdate(BaseModel):
+    label: Optional[str] = None
+    is_done: Optional[bool] = None
+    order: Optional[int] = None
+
+
+# 투표기능
+# apps/api/schemas.py (추가)
+class VoteOptionCreate(BaseModel):
+    label: str
+
+class VoteOptionOut(BaseModel):
+    id: int
+    label: str
+    votes: int
+    class Config: orm_mode = True
+
+class VoteConfigUpdate(BaseModel):
+    close_at: Optional[str] = None  # ISO8601 문자열
+
+class VoteCastIn(BaseModel):
+    option_id: int
+    voter: str  # MVP: 프론트에서 현재 사용자 ID/토큰을 보냄
+
+class VoteSummaryOut(BaseModel):
+    is_open: bool
+    close_at: Optional[str]
+    my_option_id: Optional[int]
+    total_votes: int
+    options: List[VoteOptionOut]

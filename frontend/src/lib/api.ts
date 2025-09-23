@@ -151,3 +151,11 @@ export async function listMeetings(params?: {
   })
   return data
 }
+
+
+export async function getFullscript(meetingId: string): Promise<string> {
+  const { data } = await api.get(`/meetings/${meetingId}/fullscript`, {
+    responseType: 'text',
+  })
+  return data as string
+}

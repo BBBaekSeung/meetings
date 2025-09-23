@@ -1,30 +1,53 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { STATUS_LABEL, type TaskStatus, STATUS_BADGE_TW } from '../task.ts'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 
 type T = Record<string, any>
 const props = defineProps<{ actions?: T[], meetingId?: string }>()
 const open = ref(false)
 const selected = ref<T | null>(null)
+const emit = defineEmits<{ (e: 'saved', payload: T): void }>()
 
-// 상태 뱃지 색상만 상태값(value) 기준으로 매핑
-const STATUS_CLASS: Record<string, string> = {
-  todo: 'bg-gray-200 text-gray-700',
-  in_progress: 'bg-orange-200 text-orange-900',
-  feedback: 'bg-indigo-200 text-indigo-900',
-  on_hold: 'bg-amber-100 text-amber-800',
-  canceled: 'bg-red-100 text-red-700 line-through',
-  done: 'bg-green-100 text-green-800',
+const STATUS_CLASS = STATUS_BADGE_TW
+
+// enum/문자열 모두 수용 + 기본값은 'in_progress'(진행)
+function statusValue(s: any): TaskStatus {
+  return (s?.value ?? s ?? 'in_progress') as TaskStatus
 }
 
-// 날짜 포맷
-function ymd(dateLike: any) {
-  if (!dateLike) return '—'
-  const d = typeof dateLike === 'string' ? new Date(dateLike) : dateLike
-  if (isNaN(d as any)) return '—'
+// 안전한 Date 파서
+function toDate(dateLike: any): Date | null {
+  if (!dateLike) return null
+  const d = (typeof dateLike === 'string' || typeof dateLike === 'number')
+    ? new Date(dateLike)
+    : dateLike
+  return d instanceof Date && !isNaN(d.getTime()) ? d : null
+}
+
+// MM.DD 포맷
+function fmtMD(dateLike: any): string | null {
+  const d = toDate(dateLike)
+  if (!d) return null
   const mm = String(d.getMonth() + 1).padStart(2, '0')
   const dd = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}.${mm}.${dd}`
+  return `${mm}.${dd}`
+}
+
+
+// 마감일 후보 키 탐색 (있으면 사용)
+function getDue(a: T) {
+  return a.due_date ?? a.end_date ?? a.due ?? a.deadline ?? a.finish_date ?? a.completed_at ?? null
+}
+
+// 출력: "MM.DD~" 또는 "MM.DD~MM.DD"
+function dateRange(a: T) {
+  const start = fmtMD(a.start_date)
+  const due = fmtMD(getDue(a))
+  if (start && due) return `${start}~${due}`
+  if (start) return `${start}~`
+  if (due) return `~${due}`
+  return '—'
 }
 
 // 담당자 전체 표시 (배열/문자열 모두 흡수)
@@ -38,8 +61,7 @@ function allAssignees(a: T): string[] {
 function openDetail(a: T) {
   selected.value = {
     ...a,
-    // enum 객체/문자열 모두 대응
-    status: a.status?.value ?? a.status,
+    status: statusValue(a.status),
     task_type: a.task_type?.value ?? a.task_type,
     assignees_json: a.assignees_json ?? a.assignees ?? [],
   }
@@ -50,6 +72,7 @@ function onSaved(updated: T) {
   if (!props.actions) return
   const idx = props.actions.findIndex(x => x.id === updated.id)
   if (idx >= 0) props.actions[idx] = { ...props.actions[idx], ...updated }
+  emit('saved', updated)
 }
 </script>
 
@@ -69,15 +92,16 @@ function onSaved(updated: T) {
         {{ a.title }}
       </div>
 
-      <!-- 상태(라벨은 서버 제공) + 시작일자 -->
+      <!-- 상태(공통 라벨) + 날짜 범위 -->
       <div class="flex items-center gap-2 mt-2 text-xs">
         <span
           class="inline-flex items-center px-2 py-0.5 rounded-full font-medium"
-          :class="STATUS_CLASS[a.status?.value ?? a.status ?? 'todo']"
+          :class="STATUS_CLASS[statusValue(a.status)]"
         >
-          {{ a.status_label || (a.status?.value ?? a.status ?? '').toString() }}
+          {{ STATUS_LABEL[statusValue(a.status)] }}
         </span>
-        <span class="text-gray-500">시작 {{ ymd(a.start_date) }}</span>
+        <!-- ⬇️ 여기만 변경: '시작 yyyy.mm.dd' -> 'MM.DD~[MM.DD]' -->
+        <span class="text-gray-500">{{ dateRange(a) }}</span>
       </div>
 
       <!-- 담당자: 전원 풀네임 표시 (자동 줄바꿈) -->

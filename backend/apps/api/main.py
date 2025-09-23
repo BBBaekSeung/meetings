@@ -1,8 +1,9 @@
-# apps/api/main.py
+from dotenv import load_dotenv
+load_dotenv()  # .env 로드 (최상단)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine
-
 # ★★★ 매우 중요: create_all 전에 모델을 반드시 import 해서 Base에 등록 ★★★
 from . import models  # <= 이 줄 추가!
 
@@ -10,6 +11,8 @@ from . import models  # <= 이 줄 추가!
 from .routers import meetings, actions, exports, handoff
 from dotenv import load_dotenv
 load_dotenv()  # .env 로드
+from .routers.vote import router as vote_router
+
 
 
 FRONT_ORIGINS = [
@@ -80,4 +83,4 @@ app.include_router(meetings.router, tags=["meetings"])
 app.include_router(actions.router,  tags=["actions"])
 app.include_router(exports.router,  tags=["exports"])
 app.include_router(handoff.router,  tags=["handoff"])
-
+app.include_router(vote_router,  tags=["vote"])

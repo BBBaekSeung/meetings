@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks, Query, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks, Query, Request, Body, Response
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from datetime import datetime, timedelta, timezone
 from datetime import date as _date
 import os, uuid, tempfile, json, base64, io, qrcode
 import shutil
-from typing import Literal
+from typing import Literal,  Optional, List, Dict, Any
 import logging
 from pathlib import Path
 import subprocess
@@ -23,7 +23,13 @@ from ..clova_service import transcribe_audio
 from ..llm_service import summarize_and_extract
 from ..task_classifier import classify_task_type
 from ..models import Task, TaskType, TaskStatus, Priority
+from .fullscript import normalize_segments, to_lines
+
 router = APIRouter(prefix="/meetings")
+
+
+
+
 
 # ---- 설정 값 ----
 ALLOWED_CT = {
@@ -47,13 +53,14 @@ def _qr_data_uri(s: str) -> str:
 
 # 파일 상단 공용 헬퍼로 빼기
 def _parse_date(s):
-    if not s: 
+    if not s:
         return None
     try:
         y, m, d = s.split("-")
         return _date(int(y), int(m), int(d))
     except Exception:
         return None
+
 
 # === [추가] 청크 저장 루트 ===
 UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", str(Path(tempfile.gettempdir()) / "smart-minutes")))
@@ -862,50 +869,54 @@ def _serialize_task_row(t: Task) -> dict:
         "project": getattr(t, "project", None),
     }
 
-@router.get("/{meeting_id}", response_model=MeetingStatusResponse)
-def get_meeting(meeting_id: str, request: Request, db: Session = Depends(get_db)):
-    m = require_meeting(db, meeting_id)
-    include = set(filter(None, (request.query_params.get("include") or "").split(",")))
+@router.get("/{meeting_id}")
+def get_meeting(meeting_id: str, view: str | None = None, db: Session = Depends(get_db)):
+    m = db.get(models.Meeting, meeting_id)
+    if not m:
+        raise HTTPException(404, "meeting not found")
 
-    result = None
-    if m.status in (models.MeetingStatus.COMPLETED, models.MeetingStatus.FAILED):
-        src = m.result if isinstance(m.result, dict) else {}
-
-        # ✅ summary는 그대로, actions는 DB에서 최신값으로 대체
-        actions_db = [
-            _serialize_task_row(t)
-            for t in db.query(Task).filter(Task.meeting_id == m.id).order_by(Task.id.asc()).all()
-        ]
-
-        if not include:
-            result = {
-                "summary": src.get("summary"),
-                "actions": actions_db,   # ← 여기!
-            }
-        else:
-            if "all" in include:
-                result = dict(src)
-                result["actions"] = actions_db
-            else:
-                slim = {}
-                if "summary" in include: slim["summary"] = src.get("summary")
-                if "actions" in include: slim["actions"] = actions_db
-                if "transcript" in include: slim["transcript"] = src.get("transcript")
-                if "segments" in include: slim["segments"] = src.get("segments")
-                result = slim
-
-    return {
+    base = {
         "id": m.id,
+        "status": getattr(m.status, "value", m.status),
         "name": m.name,
-        "status": m.status,
-        "status_label": m.status.label() if hasattr(m.status, "label") else None,
         "progress": m.progress,
         "source_filename": m.source_filename,
-        "created_at": to_tz(m.created_at),
-        "updated_at": to_tz(m.updated_at),
-        "result": result,
+        "created_at": m.created_at,
+        "updated_at": m.updated_at,
     }
 
+    # 완료/실패 시 result 포함
+    if getattr(m, "result", None):
+        base["result"] = m.result  # JSONUnicode면 그대로 문자열/딕셔너리
+
+    if view == "full":
+        # actions(tasks) 안전 조회
+        tasks = db.execute(
+            select(models.Task).where(models.Task.meeting_id == meeting_id)
+        ).scalars().all()
+        base["actions"] = [_serialize_task_row(t) for t in tasks]
+
+
+        # (선택) 체크리스트 미리 합치기 — 관계가 없어도 안전
+        try:
+            task_ids = [t.id for t in tasks]
+            if hasattr(models, "ChecklistItem") and task_ids:
+                rows = db.execute(
+                    select(models.ChecklistItem).where(models.ChecklistItem.task_id.in_(task_ids))
+                ).scalars().all()
+                by_task = {}
+                for r in rows:
+                    by_task.setdefault(r.task_id, []).append({
+                        "id": r.id, "label": r.label, "is_done": r.is_done, "order": r.order
+                    })
+                for a in base["actions"]:
+                    if a["task_type"] == "체크리스트":
+                        a["checklist_items"] = by_task.get(a["id"], [])
+        except Exception:
+            # 체크리스트 테이블이 아직 없거나 오류면 조용히 스킵
+            pass
+
+    return base
 
 # meetings.py 맨 아래쪽에 추가 (import는 파일 위에 적절히 배치)
 def _save_tasks_table(meeting_id_str: str, actions: list[dict]):
@@ -990,9 +1001,78 @@ def list_meetings(
         # 목록은 가볍게: 필요하면 full일 때 summary/actions만 포함
         if view == "full" and m.status in (models.MeetingStatus.COMPLETED, models.MeetingStatus.FAILED):
             src = m.result if isinstance(m.result, dict) else {}
+            actions_db = [
+                _serialize_task_row(t)
+                for t in db.query(Task)
+                        .filter(Task.meeting_id == m.id)
+                        .order_by(Task.id.asc())
+                        .all()
+            ]
             item["result"] = {
                 "summary": src.get("summary"),
-                "actions": src.get("actions"),
+                "actions": actions_db,  # ✅ DB 최신값
             }
         out.append(item)
     return out
+
+
+
+@router.get("/{meeting_id}/fullscript", response_class=Response)
+def get_fullscript_text(
+    meeting_id: str,
+    db: Session = Depends(get_db),
+    merge_consecutive: bool = Query(True, description="같은 화자의 연속 발화를 한 줄로 병합할지 여부 (기본: true)"),
+):
+    mt: models.Meeting = db.get(models.Meeting, meeting_id)
+    if not mt:
+        raise HTTPException(404, "Meeting not found")
+    if not mt.result:
+        raise HTTPException(409, "Result not ready")
+
+    try:
+        result: Dict[str, Any] = mt.result if isinstance(mt.result, dict) else json.loads(mt.result)
+    except Exception:
+        raise HTTPException(500, "Invalid result format")
+
+    segments = result.get("segments") or []
+    if not isinstance(segments, list):
+        raise HTTPException(500, "segments missing or invalid")
+
+    norm = normalize_segments(segments)
+    lines = to_lines(norm, merge=merge_consecutive)
+    text_body = "\n".join(lines)
+
+    return Response(content=text_body, media_type="text/plain; charset=utf-8")
+
+
+@router.get("/{meeting_id}/fullscript.json")
+def get_fullscript_json(
+    meeting_id: str,
+    db: Session = Depends(get_db),
+    merge_consecutive: bool = Query(True, description="같은 화자의 연속 발화를 한 줄로 병합할지 여부 (기본: true)"),
+):
+    mt: models.Meeting = db.get(models.Meeting, meeting_id)
+    if not mt:
+        raise HTTPException(404, "Meeting not found")
+    if not mt.result:
+        raise HTTPException(409, "Result not ready")
+
+    try:
+        result: Dict[str, Any] = mt.result if isinstance(mt.result, dict) else json.loads(mt.result)
+    except Exception:
+        raise HTTPException(500, "Invalid result format")
+
+    segments = result.get("segments") or []
+    if not isinstance(segments, list):
+        raise HTTPException(500, "segments missing or invalid")
+
+    norm = normalize_segments(segments)
+    lines = to_lines(norm, merge=merge_consecutive)
+
+    # UI에서 줄 단위로 렌더하기 쉽게 JSON 배열로 반환
+    return {
+        "meeting_id": meeting_id,
+        "merge_consecutive": merge_consecutive,
+        "lines": lines,  # ["참가자1: ...", "참가자2: ...", ...]
+        "count": len(lines),
+    }
