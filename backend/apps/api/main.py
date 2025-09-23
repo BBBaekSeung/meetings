@@ -8,9 +8,7 @@ from .database import Base, engine
 from . import models  # <= 이 줄 추가!
 
 # 라우터 import (모델 import보다 늦어도 OK)
-from .routers import meetings, actions, exports, handoff
-from dotenv import load_dotenv
-load_dotenv()  # .env 로드
+from .routers import meetings, actions, exports, handoff, checklist
 from .routers.vote import router as vote_router
 
 
@@ -84,3 +82,4 @@ app.include_router(actions.router,  tags=["actions"])
 app.include_router(exports.router,  tags=["exports"])
 app.include_router(handoff.router,  tags=["handoff"])
 app.include_router(vote_router,  tags=["vote"])
+app.include_router(checklist.router, tags=["checklist"])

@@ -76,7 +76,7 @@
           </FormBox>
         </CardSection>
 
-        <!-- 날짜 -->
+        <!-- 날짜 + 작업 시간 -->
         <CardSection>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <FormBox label="시작일">
@@ -98,22 +98,21 @@
                 <input type="date" v-model="local.completed_date" class="input pr-10" />
                 <span class="icon-right">📅</span>
               </div>
-            </FormBox>          </div>
+            </FormBox>
+
+            <FormBox label="작업 시간">
+              <div class="relative inline-block w-full">
+                <input
+                  v-model="local.work_time"
+                  placeholder="예) 2:00 또는 120(분)"
+                  class="input pr-10"
+                />
+                <span class="icon-right">⏱</span>
+              </div>
+            </FormBox>
+          </div>
         </CardSection>
 
-        <!-- 작업 시간 -->
-        <CardSection>
-          <FormBox label="작업 시간">
-            <div class="relative inline-block">
-              <input
-                v-model="local.work_time"
-                placeholder="예) 2:00 또는 120(분)"
-                class="input w-48 pr-10"
-              />
-              <span class="icon-right">⏱</span>
-            </div>
-          </FormBox>
-        </CardSection>
 
         <!-- 담당자/관람자 -->
         <CardSection>
@@ -260,18 +259,30 @@ async function refreshChecklist() {
   }
 }
 
+// TaskDetailDrawer.vue
 async function addChecklistItem() {
-  const label = newItem.value.trim()
-  if (!label || !props.meetingId || local.id == null) return
-  const it = await addChecklist(props.meetingId, local.id, label)
-  checklist.value.push(it)
-  newItem.value = ''
-}
-async function toggleItem(it: ChecklistItem, checked: boolean) {
   if (!props.meetingId || local.id == null) return
-  const saved = await patchChecklist(props.meetingId, local.id, it.id, { is_done: checked })
-  Object.assign(it, saved)
+  if (!newItem.value?.trim()) return
+  try {
+    await addChecklist(props.meetingId, local.id, newItem.value.trim())
+    newItem.value = ''
+    await refreshChecklist() // 목록 새로고침 함수가 있다면
+  } catch (e: any) {
+    const msg = e?.response?.data?.detail || e?.message || '추가 실패'
+    alert(`체크리스트 추가 실패: ${msg}`)
+  }
 }
+// TaskDetailDrawer.vue
+async function toggleItem(it: ChecklistItem, checked: boolean) {
+  console.debug('[toggleItem] mid', props.meetingId, 'taskId', local.id, 'itemId', it.id, 'checked', checked)
+  try {
+    await patchChecklist(props.meetingId, local.id, it.id as any, { is_done: checked })
+  } catch (e: any) {
+    console.error('[toggleItem] patch error', e?.response?.status, e?.response?.data || e)
+    alert(`체크 실패: ${e?.response?.data?.detail || e.message}`)
+  }
+}
+
 async function renameItem(it: ChecklistItem, label: string) {
   if (!props.meetingId || local.id == null) return
   const saved = await patchChecklist(props.meetingId, local.id, it.id, { label })

@@ -4,7 +4,6 @@ import logging
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 🚫 SQLAlchemy 로그 전부 차단
 logging.getLogger("sqlalchemy").setLevel(logging.CRITICAL)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./meetings.db")
@@ -15,7 +14,7 @@ if DATABASE_URL.startswith("sqlite"):
 
 engine = create_engine(
     DATABASE_URL,
-    echo=False,              # 반드시 False (환경변수로 덮어쓰지 않게!)
+    echo=False,
     pool_pre_ping=True,
     future=True,
     connect_args=connect_args,
@@ -23,3 +22,11 @@ engine = create_engine(
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 Base = declarative_base()
+
+# ✅ FastAPI 의존성: 요청마다 세션 열고 닫기
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
