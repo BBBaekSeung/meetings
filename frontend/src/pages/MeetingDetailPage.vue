@@ -164,7 +164,7 @@ const onRefresh = () => {
           <h2 class="text-lg font-semibold mb-3">업무(Task)</h2>
         <!-- ✅ 저장 이벤트를 받아서 refetch -->
         <TasksPanel
-          :actions="meeting?.result?.actions"
+          :actions="(meeting as any)?.actions ?? (meeting as any)?.result?.actions"
           :meetingId="meeting?.id"
           @saved="refetch()"
         />

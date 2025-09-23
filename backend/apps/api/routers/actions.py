@@ -170,7 +170,7 @@ def update_task(
         "due_date": t.due_date.isoformat() if t.due_date else None,
         "work_time_min": t.work_time_min,
         "status": t.status.value,
-        "status_label": t.status.label if hasattr(t.status, "label") else t.status.value,
+        "status_label": t.status.label() if hasattr(t.status, "label") else (t.status.value if hasattr(t.status, "value") else t.status),
 
         "task_type": t.task_type.value,
         "priority": t.priority.value if t.priority else None,

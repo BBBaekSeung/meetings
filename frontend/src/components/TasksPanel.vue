@@ -36,14 +36,14 @@ function fmtMD(dateLike: any): string | null {
 
 
 // 마감일 후보 키 탐색 (있으면 사용)
-function getDue(a: T) {
-  return a.due_date ?? a.end_date ?? a.due ?? a.deadline ?? a.finish_date ?? a.completed_at ?? null
+function getEnd(a: T) {
+  return a.end_date ?? null
 }
 
 // 출력: "MM.DD~" 또는 "MM.DD~MM.DD"
 function dateRange(a: T) {
   const start = fmtMD(a.start_date)
-  const due = fmtMD(getDue(a))
+  const due = fmtMD(getEnd(a))
   if (start && due) return `${start}~${due}`
   if (start) return `${start}~`
   if (due) return `~${due}`

@@ -47,4 +47,5 @@ export interface Meeting {
   mobile_url?: string | null
   qr_data_uri?: string | null
   result?: MeetingResult | null
+  actions?: any[]
 }

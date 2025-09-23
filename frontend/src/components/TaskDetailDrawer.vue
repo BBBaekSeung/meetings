@@ -98,15 +98,7 @@
                 <input type="date" v-model="local.completed_date" class="input pr-10" />
                 <span class="icon-right">📅</span>
               </div>
-            </FormBox>
-
-            <FormBox label="기한">
-              <div class="relative">
-                <input type="date" v-model="local.due_date" class="input pr-10" />
-                <span class="icon-right">📅</span>
-              </div>
-            </FormBox>
-          </div>
+            </FormBox>          </div>
         </CardSection>
 
         <!-- 작업 시간 -->
@@ -238,9 +230,7 @@ const local = reactive<any>({
   status: 'in_progress',
   task_type: '일반',
   start_date: null as string | null,
-  end_date: null as string | null,
-  due_date: null as string | null,
-  completed_date: null as string | null,
+  end_date: null as string | null,  completed_date: null as string | null,
   work_time: '',
   assignees: [] as string[],
   watchers: [] as string[],
@@ -334,8 +324,7 @@ watch(() => props.task, (t) => {
   local.task_type = t.task_type ?? '일반'
   local.start_date     = toYMD(t.start_date)
   local.end_date       = toYMD(t.end_date)
-  local.due_date       = toYMD(t.due ?? t.due_date)
-  local.completed_date = toYMD(t.completed_date)
+    local.completed_date = toYMD(t.completed_date)
   local.work_time = toWorkTimeString(t.work_time_min)
   local.assignees = normalizeNames(t.assignees_json ?? t.owner ?? [])
   local.watchers = normalizeNames(t.watchers_json ?? [])
@@ -387,8 +376,7 @@ function toPatchPayload(x: any){
     task_type: x.task_type,
     start_date: x.start_date || null,
     end_date: x.end_date || null,
-    due_date: x.due_date || null,
-    completed_date: x.completed_date || null,
+        completed_date: x.completed_date || null,
     work_time: x.work_time || null,
     assignees: x.assignees,
     watchers: x.watchers,
