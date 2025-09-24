@@ -9,3 +9,8 @@ qrcode[pil]              # QR 생성 (Pillow 포함)
 python-dateutil          # TTL/날짜 유틸 (선호)
 google-generativeai
 python-dotenv
+# backports.zoneinfo는 3.9 미만에서만 (지금은 3.13 → 설치 안 됨)
+backports.zoneinfo; python_version < "3.9"
+
+# Windows에서 표준 zoneinfo가 쓸 tz 데이터
+tzdata>=2024.1; platform_system == "Windows"

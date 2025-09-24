@@ -997,7 +997,7 @@ def list_meetings(
         item = {
             "id": m.id,
             "name": m.name,
-            "status": m.status,
+            "status": getattr(m.status, "value", m.status),  # ✅ 여기 수정
             "progress": m.progress,
     "created_at": to_tz(m.created_at),
     "updated_at": to_tz(m.updated_at),

@@ -1,7 +1,7 @@
 # apps/api/schemas.py
 
 from datetime import datetime, date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, List, Optional
 from .models import TaskStatus, TaskType
 
@@ -107,18 +107,19 @@ class VoteOptionOut(BaseModel):
     id: int
     label: str
     votes: int
-    class Config: orm_mode = True
-
-class VoteConfigUpdate(BaseModel):
-    close_at: Optional[str] = None  # ISO8601 문자열
 
 class VoteCastIn(BaseModel):
+    voter: str
     option_id: int
-    voter: str  # MVP: 프론트에서 현재 사용자 ID/토큰을 보냄
+
+# 저장(시작) 시 한 번에 받을 설정: 옵션 + 마감시각만
+class VoteConfigIn(BaseModel):
+    options: List[str] = Field(min_items=2)          # 2개 이상
+    close_at: Optional[str] = None                  # ISO8601 권장 (Z 붙이기)
 
 class VoteSummaryOut(BaseModel):
     is_open: bool
-    close_at: Optional[str]
-    my_option_id: Optional[int]
+    close_at: Optional[str] = None
+    my_option_id: Optional[int] = None              # 이 투표자가 찍은 옵션(없으면 None)
     total_votes: int
     options: List[VoteOptionOut]

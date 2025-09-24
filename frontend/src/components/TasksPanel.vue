@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { STATUS_LABEL, type TaskStatus, STATUS_BADGE_TW } from '../task.ts'
 import TaskDetailDrawer from './TaskDetailDrawer.vue'
 
 type T = Record<string, any>
 const props = defineProps<{ actions?: T[], meetingId?: string }>()
+const actions = ref<T[]>(props.actions ?? [])
+watch(() => props.actions, (arr) => { actions.value = arr ? [...arr] : [] }, { immediate: true })
+
 const open = ref(false)
 const selected = ref<T | null>(null)
 const emit = defineEmits<{ (e: 'saved', payload: T): void }>()
@@ -68,12 +71,27 @@ function openDetail(a: T) {
   open.value = true
 }
 
+// ✅ updated는 Task(=T) 전체 객체를 받는다
 function onSaved(updated: T) {
-  if (!props.actions) return
-  const idx = props.actions.findIndex(x => x.id === updated.id)
-  if (idx >= 0) props.actions[idx] = { ...props.actions[idx], ...updated }
-  emit('saved', updated)
+  const idx = actions.value.findIndex(a => a.id === updated.id)
+  if (idx >= 0) {
+    const merged = { ...actions.value[idx], ...updated }  // ✅ 부분 업데이트 병합
+    actions.value = [
+      ...actions.value.slice(0, idx),
+      merged,
+      ...actions.value.slice(idx + 1),
+    ]
+  } else {
+    actions.value = [updated, ...actions.value]
+  }
+
+  if (selected.value?.id === updated.id) {
+    selected.value = { ...selected.value, ...updated }    // 열려있는 카드도 동기화
+  }
 }
+
+
+
 </script>
 
 <template>

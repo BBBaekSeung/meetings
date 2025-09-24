@@ -146,9 +146,14 @@ export async function listMeetings(params?: {
   order?: 'asc' | 'desc'
   view?: 'brief' | 'full'
 }) {
-  const { data } = await api.get<Meeting[]>('/meetings', {
-    params: { view: 'brief', order: 'desc', limit: 50, ...(params || {}) },
-  })
+  const normalized = {
+    ...params,
+    view: params?.view?.toLowerCase() as 'brief' | 'full' ?? 'brief',
+    order: params?.order?.toLowerCase() as 'asc' | 'desc' ?? 'desc',
+    limit: params?.limit ?? 50,
+  }
+
+  const { data } = await api.get<Meeting[]>('/meetings', { params: normalized })
   return data
 }
 

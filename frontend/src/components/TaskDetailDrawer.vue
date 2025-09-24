@@ -177,6 +177,22 @@
           </ul>
         </CardSection>
 
+      <!-- 투표 -->
+      <CardSection v-else-if="local.task_type === '투표'">
+        <VoteCreateDrawer
+          v-if="mode === 'create'"
+          :meeting-id="props.meetingId"
+          :task-id="local.id"
+          @started="refreshVote"
+          @saved="(p) => emit('saved', p)"  
+        />
+        <div v-else-if="mode === 'open'" class="space-y-6">
+          <VoteRunner :meeting-id="props.meetingId" :task-id="local.id" :voter="currentUserId" />
+          <VoteManagePanel :meeting-id="props.meetingId" :task-id="local.id" />
+        </div>
+        <VoteResult v-else-if="mode === 'closed'" :meeting-id="props.meetingId" :task-id="local.id" />
+      </CardSection>
+
       </div>
 
       <!-- Footer -->
@@ -205,6 +221,15 @@ import {
   type ChecklistItem
 } from '../lib/checklist'
 
+/* ---- 새로 추가되는 import ---- */
+import VoteCreateDrawer from '../components/vote/VoteCreateDrawer.vue'
+import VoteManagePanel from '../components/vote/VoteManagePanel.vue'
+import VoteRunner from '../components/vote/VoteRunner.vue'
+import VoteResult from '../components/vote/VoteResult.vue'
+import { getVote, startVote } from '../lib/vote'
+
+
+
 /* -------------------- props/emits (맨 위) -------------------- */
 const props = defineProps<{
   modelValue: boolean
@@ -229,13 +254,40 @@ const local = reactive<any>({
   status: 'in_progress',
   task_type: '일반',
   start_date: null as string | null,
-  end_date: null as string | null,  completed_date: null as string | null,
+  end_date: null as string | null,
+  completed_date: null as string | null,
   work_time: '',
   assignees: [] as string[],
   watchers: [] as string[],
   priority: '보통' as string | null,
   project: '',
 })
+
+/* ---------------- 투표 상태 관리 ---------------- */
+const mode = ref<'create' | 'open' | 'closed'>('create')
+const vote = ref<any>(null)
+const currentUserId = 'user-123' // TODO: 실제 로그인 사용자 ID 주입
+
+async function refreshVote() {
+  if (!props.meetingId || !local.id) return
+  try {
+    const v = await getVote(props.meetingId, local.id, currentUserId)
+    vote.value = v
+    if (v.is_open) mode.value = 'open'
+    else if (v.total_votes > 0) mode.value = 'closed'
+    else mode.value = 'create'
+  } catch {
+    mode.value = 'create'
+  }
+}
+watch(() => [props.meetingId, local.id, local.task_type], () => {
+  if (local.task_type === '투표') {
+    mode.value = 'create'
+  } else {
+    mode.value = 'create'
+  }
+}, { immediate: true })
+
 
 /* -------------------- 체크리스트 상태/로직 (local 아래) -------------------- */
 const checklist = ref<ChecklistItem[]>([])
@@ -354,16 +406,20 @@ const statuses : { value: TaskStatus, label: string }[] = [
 ]
 function close(){ modelValueProxy.value = false }
 const saving = ref(false)
-async function save(){
+
+async function save() {
   if (!props.meetingId || local.id == null) return close()
   saving.value = true
   try {
     const payload = toPatchPayload(local)
     const { data } = await api.patch(`/meetings/${props.meetingId}/actions/${local.id}`, payload)
-    emit('saved', data)
+    emit('saved', data)   // ← 기존대로 부모(TasksPanel)에게 저장 알림
     close()
   } finally { saving.value = false }
 }
+
+
+
 function normalizeNames(v: any): string[] {
   if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean)
   if (typeof v === 'string') {

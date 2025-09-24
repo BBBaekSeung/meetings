@@ -158,7 +158,9 @@ class ChecklistItem(Base):
 #     passive_deletes=True,
 # )
 
-# 투표기능class VoteOption(Base):
+# 투표기능
+
+class VoteOption(Base):
     __tablename__ = "vote_options"
     id = Column(Integer, primary_key=True, autoincrement=True)
     task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), index=True, nullable=False)
