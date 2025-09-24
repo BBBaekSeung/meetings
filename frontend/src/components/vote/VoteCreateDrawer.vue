@@ -9,18 +9,18 @@ const emit = defineEmits<{
   (e: 'saved', payload: { id: number; status?: string }): void
 }>()
 
-const voteModel = ref({ title: '', options: [] as string[], deadline: null as string | null })
+const voteModel = ref({ options: [] as string[], deadline: null as string | null })
 const saving = ref(false)
 
 async function saveAndStart() {
-  if (!voteModel.value.title || voteModel.value.options.length < 2) {
-    alert('제목과 최소 2개의 항목이 필요합니다.')
+  if (voteModel.value.options.map(o => o.trim()).filter(Boolean).length < 2) {
+    alert('옵션은 최소 2개 이상이어야 합니다.')
     return
   }
   saving.value = true
   try {
     await startVote(props.meetingId, props.taskId, {
-      options: voteModel.value.options,
+      options: voteModel.value.options.map(o => o.trim()).filter(Boolean),
       close_at: voteModel.value.deadline,
     })
     emit('started') // TaskDetailDrawer에서 refreshVote() 호출

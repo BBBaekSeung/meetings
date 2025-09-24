@@ -2,7 +2,7 @@
 import enum, uuid, json
 from datetime import datetime, date, timezone
 from sqlalchemy import (
-    Column, Integer, String, Date, DateTime, Boolean, Enum, ForeignKey, func, Index, UniqueConstraint
+    Column, Integer, String, Date, DateTime, Boolean, Enum, ForeignKey, func, Index, UniqueConstraint, text
 )
 from sqlalchemy.types import TypeDecorator, TEXT
 from sqlalchemy.orm import relationship
@@ -162,9 +162,14 @@ class ChecklistItem(Base):
 
 class VoteOption(Base):
     __tablename__ = "vote_options"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(Integer, ForeignKey("tasks.id", ondelete="CASCADE"), index=True, nullable=False)
-    label = Column(String(256), nullable=False)
+
+    id = Column(Integer, primary_key=True, index=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False, index=True)
+    label = Column(String(255), nullable=False)
+
+    order_index = Column("order", Integer, nullable=False, default=0, server_default=text("0"))
+    is_done = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+
 
 class VoteBallot(Base):
     __tablename__ = "vote_ballots"

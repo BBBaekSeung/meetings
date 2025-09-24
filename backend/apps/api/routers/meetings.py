@@ -379,14 +379,27 @@ def update_task(
         }.get(m, t.status)
 
     # 유형
+# 유형
     if "task_type" in payload:
-        tt = payload.get("task_type") or ""
-        t.task_type = {
-            "일반":       TaskType.GENERAL,
-            "체크리스트": TaskType.CHECKLIST,
-            "데이터 취합": TaskType.COLLECT,
-            "투표":       TaskType.VOTE,
-        }.get(tt, t.task_type)
+        tt_raw = (payload.get("task_type") or "").strip()
+        # 한/영 모두 허용
+        tt_map = {
+            "일반": TaskType.GENERAL, "general": TaskType.GENERAL, "GENERAL": TaskType.GENERAL,
+            "체크리스트": TaskType.CHECKLIST, "checklist": TaskType.CHECKLIST, "CHECKLIST": TaskType.CHECKLIST,
+            "데이터 취합": TaskType.COLLECT, "collect": TaskType.COLLECT, "COLLECT": TaskType.COLLECT,
+            "투표": TaskType.VOTE, "vote": TaskType.VOTE, "VOTE": TaskType.VOTE,
+        }
+        new_tt = tt_map.get(tt_raw, None)
+
+        if new_tt is not None:
+            # 🔒 투표 옵션이 있는데 VOTE → 다른 타입으로 바꾸려 하면 금지
+            if t.task_type == TaskType.VOTE and new_tt != TaskType.VOTE:
+                exists_vote = db.query(models.VoteOption.id).filter_by(task_id=t.id).first()
+                if exists_vote:
+                    raise HTTPException(409, "cannot change task_type from VOTE while vote exists")
+            t.task_type = new_tt
+        # new_tt가 None(엉뚱한 값)이면 무시 → 기존 타입 유지
+
 
     # 날짜 (YYYY-MM-DD)
     if "start_date"     in payload: t.start_date     = _parse_date(payload.get("start_date"))

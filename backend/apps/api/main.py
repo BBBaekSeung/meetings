@@ -4,8 +4,9 @@ load_dotenv()  # .env 로드 (최상단)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import Base, engine
-# ★★★ 매우 중요: create_all 전에 모델을 반드시 import 해서 Base에 등록 ★★★
-from . import models  # <= 이 줄 추가!
+
+from . import models 
+models.Base.metadata.create_all(bind=engine)
 
 # 라우터 import (모델 import보다 늦어도 OK)
 from .routers import meetings, actions, exports, handoff, checklist
