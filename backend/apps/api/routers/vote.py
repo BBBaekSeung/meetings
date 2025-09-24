@@ -6,7 +6,7 @@ from .meetings import get_db
 from .. import models, schemas
 from datetime import datetime, timezone
 import logging
-
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["vote"])
 
 def _get_vote_task(db: Session, mid: str, task_id: int) -> models.Task:
@@ -39,15 +39,13 @@ def _is_open(task: models.Task):
 def get_vote(mid: str, task_id: int, voter: str | None = None, db: Session = Depends(get_db)):
     task = _get_vote_task(db, mid, task_id)
 
-    # 옵션 조회
-    opts = (
-    db.query(models.VoteOption)
-      .filter_by(task_id=task.id)
-      .order_by(models.VoteOption.order_index, models.VoteOption.id)
-      .all()
-)
+    # 옵션 조회 (단 한 번)
+    opts = (db.query(models.VoteOption)
+              .filter_by(task_id=task.id)
+              .order_by(models.VoteOption.order_index, models.VoteOption.id)
+              .all())
+    logger.info("[get_vote] mid=%s task=%s opts=%d", mid, task.id, len(opts))
 
-    # ✅ 옵션이 하나도 없으면 '초기 상태'로 응답 (절대 500 안나오게)
     if not opts:
         return schemas.VoteSummaryOut(
             is_open=False,
@@ -60,12 +58,15 @@ def get_vote(mid: str, task_id: int, voter: str | None = None, db: Session = Dep
     counts = dict(
         db.query(models.VoteBallot.option_id, func.count(models.VoteBallot.id))
           .filter(models.VoteBallot.task_id == task.id)
-          .group_by(models.VoteBallot.option_id).all()
+          .group_by(models.VoteBallot.option_id)
+          .all()
     )
 
     my = None
     if voter:
-        my_row = db.query(models.VoteBallot).filter_by(task_id=task.id, voter=voter).first()
+        my_row = (db.query(models.VoteBallot)
+                    .filter_by(task_id=task.id, voter=voter)
+                    .first())
         my = my_row.option_id if my_row else None
 
     return schemas.VoteSummaryOut(
@@ -76,6 +77,8 @@ def get_vote(mid: str, task_id: int, voter: str | None = None, db: Session = Dep
         options=[schemas.VoteOptionOut(id=o.id, label=o.label, votes=int(counts.get(o.id, 0))) for o in opts],
     )
 
+
+
 @router.post("/meetings/{mid}/actions/{task_id}/vote/options",
              response_model=schemas.VoteOptionOut, status_code=201)
 def add_option(mid: str, task_id: int, payload: schemas.VoteOptionCreate, db: Session = Depends(get_db)):
@@ -84,7 +87,7 @@ def add_option(mid: str, task_id: int, payload: schemas.VoteOptionCreate, db: Se
         raise HTTPException(409, "vote closed")
 
     # 현재 최대 order 구해서 뒤에 붙이기
-    max_ord = db.query(func.max(models.VoteOption.order)).filter_by(task_id=task.id).scalar()
+    max_ord = db.query(func.max(models.VoteOption.order_index)).filter_by(task_id=task.id).scalar()
     next_ord = 0 if max_ord is None else max_ord + 1
 
     o = models.VoteOption(
@@ -140,50 +143,56 @@ def _set_vote_settings(task: models.Task, *, close_at: str | None):
 
 # apps/api/routers/vote.py
 
-@router.post("/meetings/{mid}/actions/{task_id}/vote/start", status_code=204)
+@router.post("/meetings/{mid}/actions/{task_id}/vote/start",
+             response_model=schemas.VoteSummaryOut, status_code=201)
 def start_vote(mid: str, task_id: int, cfg: schemas.VoteConfigIn, db: Session = Depends(get_db)):
     try:
-        """저장 + 시작: 옵션을 일괄 반영하고 투표를 OPEN 상태로 만든다."""
-        # 1) 투표 타입 검사 대신 일반적으로 Task 로드
         task = db.get(models.Task, task_id)
         if not task or str(task.meeting_id) != str(mid):
             raise HTTPException(404, "task not found")
         if task.status == models.TaskStatus.DONE:
             raise HTTPException(409, "already closed")
 
-        # 2) 옵션 유효성(공백 제거 후 2개 이상) — 잘못된 데이터로 인한 500 방지
         labels = [ (s or "").strip() for s in (cfg.options or []) if (s or "").strip() ]
         if len(labels) < 2:
             raise HTTPException(422, "at least two options required")
 
-        # 3) 태스크를 투표 타입으로 전환 (처음 시작할 때 꼭 필요)
         if task.task_type != models.TaskType.VOTE:
             task.task_type = models.TaskType.VOTE
 
-        # 4) 기존 표/옵션 초기화 (순서 중요: 표 → 옵션)
         db.query(models.VoteBallot).filter_by(task_id=task.id).delete()
         db.query(models.VoteOption).filter_by(task_id=task.id).delete()
         db.flush()
 
-        # 5) 옵션 생성
         for idx, lab in enumerate(labels):
             db.add(models.VoteOption(
                 task_id=task.id,
                 label=lab,
                 is_done=False,
-                order_index=idx,           # ← 필수
+                order_index=idx,
             ))
 
-        # 6) 마감시각(로컬 문자열 그대로 저장)
         _set_vote_settings(task, close_at=cfg.close_at if cfg.close_at else None)
-
-        # 7) 진행중 상태로
         task.status = models.TaskStatus.IN_PROGRESS
 
         db.commit()
+        logger.info("[start_vote] task_id=%s, labels=%s", task.id, labels)
+
+        # 커밋 후 현재 상태 요약 반환 → 프론트는 응답으로 state 즉시 갱신 가능
+        opts = (db.query(models.VoteOption)
+                  .filter_by(task_id=task.id)
+                  .order_by(models.VoteOption.order_index, models.VoteOption.id)
+                  .all())
+        return schemas.VoteSummaryOut(
+            is_open=True,
+            close_at=cfg.close_at or None,
+            my_option_id=None,
+            total_votes=0,
+            options=[schemas.VoteOptionOut(id=o.id, label=o.label, votes=0) for o in opts],
+        )
 
     except Exception:
-        logging.exception("Error in start_vote")
+        logger.exception("Error in start_vote")
         raise
 
 

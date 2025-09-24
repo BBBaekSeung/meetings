@@ -1,5 +1,5 @@
 // src/lib/vote.ts
-import { api } from './api'  // ← checklist.ts와 같은 폴더라면 './api'가 맞습니다.
+import { api } from './api'
 
 export interface VoteOption {
   id: number
@@ -15,25 +15,23 @@ export interface VoteSummary {
   options: VoteOption[]
 }
 
-export interface VoteStartPayload {
-  options: string[]            // 최소 2개
-  close_at?: string | null     // ISO8601 (예: '2025-10-01T12:00:00Z')
-}
-
-
 export async function startVote(
   meetingId: string,
   taskId: number,
   payload: { options: string[]; close_at?: string | null }
 ) {
-  await api.post(`/meetings/${meetingId}/actions/${taskId}/vote/start`, payload)
+  const { data } = await api.post(
+    `/meetings/${meetingId}/actions/${taskId}/vote/start`,
+    payload
+  )
+  return data as VoteSummary   // ← 백엔드 응답(VoteSummaryOut)을 그대로 돌려줌
 }
 
-export async function getVote(meetingId: string, taskId: number, voter?: string) {
+export async function getVote(meetingId: string, taskId: number, voter?: string): Promise<VoteSummary> {
   const { data } = await api.get(`/meetings/${meetingId}/actions/${taskId}/vote`, {
-    params: voter ? { voter } : {},
+    params: voter ? { voter } : undefined,
   })
-  return data
+  return data as VoteSummary
 }
 
 export async function castVote(meetingId: string, taskId: number, voter: string, option_id: number) {
