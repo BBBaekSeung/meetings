@@ -183,8 +183,8 @@
           v-if="mode === 'create'"
           :meeting-id="props.meetingId"
           :task-id="local.id"
-          @started="refreshVote"
-          @saved="(p) => emit('saved', p)"  
+          @started="onVoteStarted"            
+          @saved="(p) => emit('saved', p)"
         />
         <div v-else-if="mode === 'open'" class="space-y-6">
           <VoteRunner :meeting-id="props.meetingId" :task-id="local.id" :voter="currentUserId" />
@@ -221,15 +221,20 @@ import {
   type ChecklistItem
 } from '../lib/checklist'
 
+
+
+
 /* ---- 새로 추가되는 import ---- */
 import VoteCreateDrawer from '../components/vote/VoteCreateDrawer.vue'
 import VoteManagePanel from '../components/vote/VoteManagePanel.vue'
 import VoteRunner from '../components/vote/VoteRunner.vue'
-import VoteResult from '../components/vote/VoteResult.vue'
 import { getVote, startVote } from '../lib/vote'
-
-
-
+import type { VoteSummary } from '../lib/vote'
+function onVoteStarted(summary: VoteSummary) {
+  // 저장 직후 서버 재호출 없이 즉시 반영
+  vote.value = summary
+  mode.value = summary.is_open ? 'open' : (summary.total_votes > 0 ? 'closed' : 'create')
+}
 /* -------------------- props/emits (맨 위) -------------------- */
 const props = defineProps<{
   modelValue: boolean
@@ -280,14 +285,18 @@ async function refreshVote() {
     mode.value = 'create'
   }
 }
-watch(() => [props.meetingId, local.id, local.task_type], () => {
-  if (local.task_type === '투표') {
-    mode.value = 'create'
-  } else {
-    mode.value = 'create'
-  }
-}, { immediate: true })
-
+watch(
+  () => [props.meetingId, local.id, local.task_type] as const,
+  async () => {
+    if (local.task_type === '투표' && props.meetingId && local.id) {
+      await refreshVote()   // 현재 상태를 서버에서 가져와 mode/vote 셋업
+    } else {
+      mode.value = 'create'
+      vote.value = null
+    }
+  },
+  { immediate: true }
+)
 
 /* -------------------- 체크리스트 상태/로직 (local 아래) -------------------- */
 const checklist = ref<ChecklistItem[]>([])
