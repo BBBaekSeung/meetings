@@ -228,6 +228,25 @@ def to_tz(dt, tz="Asia/Seoul"):
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(ZoneInfo(tz)).isoformat()
 
+
+
+def _get_vote_close_at_from_task(task: Task):
+    dj = getattr(task, "details_json", None) or {}
+    v  = dj.get("vote") or {}
+    return v.get("close_at")
+
+def _is_vote_open_for_task(task: Task) -> bool:
+    # close_vote 시 status=DONE 이므로 바로 닫힘 처리
+    if task.status == TaskStatus.DONE:
+        return False
+    ca = _get_vote_close_at_from_task(task)
+    if not ca:
+        return True
+    try:
+        return datetime.now() < datetime.fromisoformat(ca)  # 로컬 naive 비교(당신의 vote.py와 동일)
+    except Exception:
+        return True
+
 # ---- DB 세션 DI ----
 def get_db():
     db = database.SessionLocal()
@@ -379,10 +398,9 @@ def update_task(
         }.get(m, t.status)
 
     # 유형
-# 유형
+
     if "task_type" in payload:
         tt_raw = (payload.get("task_type") or "").strip()
-        # 한/영 모두 허용
         tt_map = {
             "일반": TaskType.GENERAL, "general": TaskType.GENERAL, "GENERAL": TaskType.GENERAL,
             "체크리스트": TaskType.CHECKLIST, "checklist": TaskType.CHECKLIST, "CHECKLIST": TaskType.CHECKLIST,
@@ -392,11 +410,11 @@ def update_task(
         new_tt = tt_map.get(tt_raw, None)
 
         if new_tt is not None:
-            # 🔒 투표 옵션이 있는데 VOTE → 다른 타입으로 바꾸려 하면 금지
             if t.task_type == TaskType.VOTE and new_tt != TaskType.VOTE:
-                exists_vote = db.query(models.VoteOption.id).filter_by(task_id=t.id).first()
-                if exists_vote:
-                    raise HTTPException(409, "cannot change task_type from VOTE while vote exists")
+                # ✅ '존재'가 아니라 '열려 있는지'만 체크
+                if _is_vote_open_for_task(t):
+                    raise HTTPException(409, "cannot change task_type from VOTE while vote is open")
+                # 닫혀 있으면 전환 허용
             t.task_type = new_tt
         # new_tt가 None(엉뚱한 값)이면 무시 → 기존 타입 유지
 

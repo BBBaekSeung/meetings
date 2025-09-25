@@ -164,3 +164,29 @@ export async function getFullscript(meetingId: string): Promise<string> {
   })
   return data as string
 }
+
+// [추가] 특정 업무(action) 필드 업데이트
+export async function patchTask(
+  meetingId: string,
+  actionId: number,
+  patch: Partial<{
+    title: string
+    assignees: string[]
+    watchers: string[]
+    note: string
+    start_date: string | null
+    end_date: string | null
+    completed_date: string | null
+    due_date: string | null
+    work_time: string | number
+    status: 'todo'|'in_progress'|'feedback'|'on_hold'|'canceled'|'done'
+    task_type: '일반'|'체크리스트'|'데이터 취합'|'투표'
+    priority: '낮음'|'보통'|'높음'|'긴급'|null
+  }>
+) {
+  const { data } = await api.patch(
+    `/meetings/${meetingId}/actions/${actionId}`,
+    patch
+  )
+  return data
+}

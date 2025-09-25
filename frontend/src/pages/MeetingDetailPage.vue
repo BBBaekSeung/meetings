@@ -118,27 +118,38 @@ const onRefresh = () => {
     class="hidden md:flex flex-col gap-1 absolute left-0 top-3 -translate-x-full z-10"
     aria-label="회의 결과 탭"
   >
+  <!-- 공통: 래퍼 폭은 기존 버튼 폭(예: w-20)으로 고정 -->
+  <div class="w-20">
     <button
-      class="px-3 py-1 text-sm rounded border transition
+      class="block ml-auto w-10 h-32 flex items-center justify-center
+             rounded border text-sm font-bold transition tracking-wide
              aria-selected:bg-gray-900 aria-selected:text-white
              not-aria-selected:bg-gray-100 not-aria-selected:text-gray-700
-             hover:not-aria-selected:bg-gray-200"
+             hover:not-aria-selected:bg-gray-200
+             [writing-mode:vertical-rl] [text-orientation:upright]"
       :aria-selected="leftTab === 'summary'"
       @click="leftTab = 'summary'"
     >
-      요약
+      요ㅤㅤ약
     </button>
+  </div>
+
+  <div class="w-20">
     <button
-      class="px-3 py-1 text-sm rounded border transition
+      class="block ml-auto w-10 h-32 flex items-center justify-center
+             rounded border text-sm font-bold transition tracking-wide
              aria-selected:bg-gray-900 aria-selected:text-white
              not-aria-selected:bg-gray-100 not-aria-selected:text-gray-700
-             hover:not-aria-selected:bg-gray-200"
+             hover:not-aria-selected:bg-gray-200
+             [writing-mode:vertical-rl] [text-orientation:upright]"
       :aria-selected="leftTab === 'fullscript'"
       @click="leftTab = 'fullscript'"
     >
       스크립트
     </button>
-  </nav>
+  </div>
+</nav>
+
 
   <!-- 카드: 그대로 전체 너비 사용 -->
   <div class="p-4 rounded-2xl border bg-white h-full">

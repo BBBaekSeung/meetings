@@ -202,11 +202,17 @@ def start_vote(mid: str, task_id: int, cfg: schemas.VoteConfigIn, db: Session = 
 
 @router.post("/meetings/{mid}/actions/{task_id}/vote/close", status_code=204)
 def close_vote(mid: str, task_id: int, db: Session = Depends(get_db)):
-    """투표 종료 → 더 이상 투표 불가, 결과는 get_vote로 그대로 노출"""
     task = _get_vote_task(db, mid, task_id)
+    logger.info("[close_vote] BEFORE task=%s status=%s", task.id, task.status)
     if task.status != models.TaskStatus.DONE:
         task.status = models.TaskStatus.DONE
+        # (권장) 닫은 시각도 남기면 이후 판정이 더 안정적
+        dj = getattr(task, "details_json", None) or {}
+        (dj.setdefault("vote", {}))["closed_at"] = datetime.now().isoformat(timespec="seconds")
+        task.details_json = dj
         db.commit()
+        db.refresh(task)
+    logger.info("[close_vote] AFTER  task=%s status=%s", task.id, task.status)
 
 @router.post("/meetings/{mid}/actions/{task_id}/vote/cancel", status_code=204)
 def cancel_vote(mid: str, task_id: int, db: Session = Depends(get_db)):

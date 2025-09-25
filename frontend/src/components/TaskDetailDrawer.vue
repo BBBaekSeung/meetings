@@ -22,10 +22,29 @@
       <!-- Header -->
       <div class="px-5 py-4 border-b flex items-center gap-2">
         <div class="text-[18px] font-semibold truncate leading-6">
-          {{ headerTitle }}
+          <template v-if="editingTitle">
+            <input
+              v-model="draftTitle"
+              class="border rounded px-2 py-1 text-base font-semibold bg-white dark:bg-zinc-900"
+              @keyup.enter="saveEditTitle"
+              @keydown.esc="cancelEditTitle"
+              @blur="cancelEditTitle"
+              autofocus
+            />
+            <button
+              class="ml-2 px-2.5 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+              type="button"
+              @mousedown.prevent="saveEditTitle"
+            >
+              저장
+            </button>
+          </template>
+          <template v-else>
+            <span class="cursor-pointer" @click="startEditTitle" title="제목 수정">
+              {{ headerTitle }}
+            </span>
+          </template>
         </div>
-        
-  
         <span class="ml-auto text-sm text-gray-500"></span>
         <button class="ml-2 px-2.5 py-1.5 rounded-lg border text-sm hover:bg-gray-50" @click="close">닫기</button>
       </div>
@@ -113,7 +132,6 @@
           </div>
         </CardSection>
 
-
         <!-- 담당자/관람자 -->
         <CardSection>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -177,22 +195,22 @@
           </ul>
         </CardSection>
 
-      <!-- 투표 -->
-      <CardSection v-else-if="local.task_type === '투표'">
-        <VoteCreateDrawer
-          v-if="mode === 'create'"
-          :meeting-id="props.meetingId"
-          :task-id="local.id"
-          @started="onVoteStarted"            
-          @saved="(p) => emit('saved', p)"
-        />
-        <div v-else-if="mode === 'open'" class="space-y-6">
-          <VoteRunner :meeting-id="props.meetingId" :task-id="local.id" :voter="currentUserId" />
-          <VoteManagePanel :meeting-id="props.meetingId" :task-id="local.id" />
-        </div>
-        <VoteResult v-else-if="mode === 'closed'" :meeting-id="props.meetingId" :task-id="local.id" />
-      </CardSection>
-
+        <!-- 투표 -->
+        <CardSection v-else-if="local.task_type === '투표'">
+          <VoteCreateDrawer
+            v-if="mode === 'create'"
+            :meeting-id="props.meetingId"
+            :task-id="local.id"
+            @started="onVoteStarted"
+            @saved="(p) => emit('saved', p)"
+            @closed="onVoteClosed"
+          />
+          <div v-else-if="mode === 'open'" class="space-y-6">
+            <VoteRunner :meeting-id="props.meetingId" :task-id="local.id" :voter="currentUserId" />
+            <VoteManagePanel :meeting-id="props.meetingId" :task-id="local.id" />
+          </div>
+          <VoteResult v-else-if="mode === 'closed'" :meeting-id="props.meetingId" :task-id="local.id" />
+        </CardSection>
       </div>
 
       <!-- Footer -->
@@ -212,7 +230,8 @@
 import { defineComponent, h, reactive, watch, computed, ref } from 'vue'
 import type { PropType } from 'vue'
 import { api } from '../lib/api'
-import { type TaskStatus, STATUS_BADGE_TW } from '../task.ts'
+import { type TaskStatus, STATUS_BADGE_TW } from '../task' // ← .ts 확장자 제거
+
 import {
   listChecklist,
   addChecklist,
@@ -221,21 +240,16 @@ import {
   type ChecklistItem
 } from '../lib/checklist'
 
-
-
-
-/* ---- 새로 추가되는 import ---- */
+/* ---- 투표 관련 import ---- */
 import VoteCreateDrawer from '../components/vote/VoteCreateDrawer.vue'
 import VoteManagePanel from '../components/vote/VoteManagePanel.vue'
 import VoteRunner from '../components/vote/VoteRunner.vue'
-import { getVote, startVote } from '../lib/vote'
+import VoteResult from '../components/vote/VoteResult.vue'
+
+import { getVote, closeVote, cancelVote } from '../lib/vote' // startVote 미사용이라 제거
 import type { VoteSummary } from '../lib/vote'
-function onVoteStarted(summary: VoteSummary) {
-  // 저장 직후 서버 재호출 없이 즉시 반영
-  vote.value = summary
-  mode.value = summary.is_open ? 'open' : (summary.total_votes > 0 ? 'closed' : 'create')
-}
-/* -------------------- props/emits (맨 위) -------------------- */
+
+/* -------------------- props/emits -------------------- */
 const props = defineProps<{
   modelValue: boolean
   meetingId: string
@@ -251,7 +265,7 @@ const modelValueProxy = computed({
   set: (v: boolean) => emit('update:modelValue', v),
 })
 
-/* -------------------- local form state (props 다음) -------------------- */
+/* -------------------- local form state -------------------- */
 const local = reactive<any>({
   id: null,
   title: '',
@@ -268,10 +282,50 @@ const local = reactive<any>({
   project: '',
 })
 
+/* -------------------- 제목 인라인 편집 상태/로직 -------------------- */
+const editingTitle = ref(false)
+const draftTitle = ref('')
+
+function startEditTitle() {
+  if (!props.task) return
+  draftTitle.value = (local.title || '').trim() || '주간업무보고 템플릿'
+  editingTitle.value = true
+}
+async function saveEditTitle() {
+  if (!props.meetingId || local.id == null) { editingTitle.value = false; return }
+  const newTitle = draftTitle.value.trim()
+  const curTitle = (local.title || '').trim()
+  if (!newTitle || newTitle === curTitle) { editingTitle.value = false; return }
+  try {
+    const { data } = await api.patch(`/meetings/${props.meetingId}/actions/${local.id}`, { title: newTitle })
+    local.title = data?.title ?? newTitle
+    emit('saved', data || { id: local.id, title: local.title })
+  } catch (e: any) {
+    alert(e?.response?.data?.detail ?? e.message ?? '제목 저장 실패')
+  } finally {
+    editingTitle.value = false
+  }
+}
+function cancelEditTitle() {
+  // blur로 바로 빠져나간 경우, 저장하지 않고 편집 종료
+  editingTitle.value = false
+}
+
 /* ---------------- 투표 상태 관리 ---------------- */
 const mode = ref<'create' | 'open' | 'closed'>('create')
 const vote = ref<any>(null)
 const currentUserId = 'user-123' // TODO: 실제 로그인 사용자 ID 주입
+
+function onVoteStarted(summary: VoteSummary) {
+  // 저장 직후 서버 재호출 없이 즉시 반영
+  vote.value = summary
+  mode.value = summary.is_open ? 'open' : (summary.total_votes > 0 ? 'closed' : 'create')
+}
+function onVoteClosed() {
+  // 서버는 이미 DONE으로 바뀌었을 것. 로컬도 맞춰서
+  local.status = 'done'
+  mode.value = 'closed'
+}
 
 async function refreshVote() {
   if (!props.meetingId || !local.id) return
@@ -281,15 +335,23 @@ async function refreshVote() {
     if (v.is_open) mode.value = 'open'
     else if (v.total_votes > 0) mode.value = 'closed'
     else mode.value = 'create'
-  } catch {
+  } catch (e: any) {
+    // 아직 투표 미시작이거나 레이스 → 'create'
+    if (e?.response?.status === 409) {
+      mode.value = 'create'
+      vote.value = null
+      return
+    }
     mode.value = 'create'
   }
 }
+
 watch(
-  () => [props.meetingId, local.id, local.task_type] as const,
+  () => [props.meetingId, local.id] as const,
   async () => {
-    if (local.task_type === '투표' && props.meetingId && local.id) {
-      await refreshVote()   // 현재 상태를 서버에서 가져와 mode/vote 셋업
+    // 태스크가 로드/변경될 때만 서버 상태를 보고 모드 결정
+    if (props.meetingId && local.id && local.task_type === '투표') {
+      await refreshVote()
     } else {
       mode.value = 'create'
       vote.value = null
@@ -298,7 +360,7 @@ watch(
   { immediate: true }
 )
 
-/* -------------------- 체크리스트 상태/로직 (local 아래) -------------------- */
+/* -------------------- 체크리스트 상태/로직 -------------------- */
 const checklist = ref<ChecklistItem[]>([])
 const newItem = ref('')
 const loadingChecklist = ref(false)
@@ -320,20 +382,19 @@ async function refreshChecklist() {
   }
 }
 
-// TaskDetailDrawer.vue
 async function addChecklistItem() {
   if (!props.meetingId || local.id == null) return
   if (!newItem.value?.trim()) return
   try {
     await addChecklist(props.meetingId, local.id, newItem.value.trim())
     newItem.value = ''
-    await refreshChecklist() // 목록 새로고침 함수가 있다면
+    await refreshChecklist()
   } catch (e: any) {
     const msg = e?.response?.data?.detail || e?.message || '추가 실패'
     alert(`체크리스트 추가 실패: ${msg}`)
   }
 }
-// TaskDetailDrawer.vue
+
 async function toggleItem(it: ChecklistItem, checked: boolean) {
   console.debug('[toggleItem] mid', props.meetingId, 'taskId', local.id, 'itemId', it.id, 'checked', checked)
   try {
@@ -355,14 +416,13 @@ async function removeItem(it: ChecklistItem) {
   checklist.value = checklist.value.filter(x => x.id !== it.id)
 }
 
-/* -------------------- watch 등록 (가장 마지막) -------------------- */
 watch(
   () => [props.meetingId, local.id, local.task_type] as const,
   () => { void refreshChecklist() },
   { immediate: true }
 )
 
-/* ---------- 날짜 유틸 등 기존 코드 유지 ---------- */
+/* ---------- 날짜 유틸 등 ---------- */
 function toYMD(v: any): string | null {
   if (!v) return null
   if (typeof v === 'string') {
@@ -396,7 +456,7 @@ watch(() => props.task, (t) => {
   local.task_type = t.task_type ?? '일반'
   local.start_date     = toYMD(t.start_date)
   local.end_date       = toYMD(t.end_date)
-    local.completed_date = toYMD(t.completed_date)
+  local.completed_date = toYMD(t.completed_date)
   local.work_time = toWorkTimeString(t.work_time_min)
   local.assignees = normalizeNames(t.assignees_json ?? t.owner ?? [])
   local.watchers = normalizeNames(t.watchers_json ?? [])
@@ -417,17 +477,78 @@ function close(){ modelValueProxy.value = false }
 const saving = ref(false)
 
 async function save() {
-  if (!props.meetingId || local.id == null) return close()
+  if (!props.meetingId || local.id == null) return
   saving.value = true
   try {
-    const payload = toPatchPayload(local)
-    const { data } = await api.patch(`/meetings/${props.meetingId}/actions/${local.id}`, payload)
-    emit('saved', data)   // ← 기존대로 부모(TasksPanel)에게 저장 알림
-    close()
-  } finally { saving.value = false }
+    const wasVote = props.task?.task_type === '투표'
+    const toNonVote = local.task_type !== '투표' // ← 체크리스트뿐 아니라 '일반' 등 모두 포함
+
+    if (wasVote && toNonVote) {
+      try {
+        const v = await getVote(props.meetingId, local.id, currentUserId)
+        // 1) 열려 있으면 먼저 닫고
+        if (v?.is_open) {
+          await closeVote(props.meetingId, local.id)
+        }
+        // 2) 존재 자체를 제거(취소)
+        await cancelVote(props.meetingId, local.id)
+
+        // 필요시 상태 동기화
+        // local.status = 'done'
+      } catch (e) {
+        // 투표 미시작/이미 취소 상태면 그냥 통과
+        console.debug('[vote teardown]', e)
+      }
+    }
+
+    const payload = toPatchPayload(local, props.task)
+    let data
+
+    try {
+      ({ data } = await api.patch(`/meetings/${props.meetingId}/actions/${local.id}`, payload))
+    } catch (e: any) {
+      // 혹시나 타이밍 이슈로 409가 오면 단계적 축소 재시도
+      if (e?.response?.status === 409 && wasVote && toNonVote) {
+        const p1: any = { ...payload }; delete p1.task_type
+        try {
+          ({ data } = await api.patch(`/meetings/${props.meetingId}/actions/${local.id}`, p1))
+        } catch (e2: any) {
+          if (e2?.response?.status === 409) {
+            const p2: any = { ...p1 }; delete p2.status
+            ;({ data } = await api.patch(`/meetings/${props.meetingId}/actions/${local.id}`, p2))
+          } else {
+            throw e2
+          }
+        }
+      } else {
+        throw e
+      }
+    }
+
+    // 응답 반영
+    Object.assign(local, {
+      title: data.title ?? local.title,
+      note: data.note ?? local.note,
+      status: data.status ?? local.status,
+      task_type: data.task_type ?? local.task_type,
+      start_date: toYMD(data.start_date) ?? local.start_date,
+      end_date: toYMD(data.end_date) ?? local.end_date,
+      completed_date: toYMD(data.completed_date) ?? local.completed_date,
+      work_time: toWorkTimeString(data.work_time_min),
+      assignees: normalizeNames(data.assignees ?? data.assignees_json ?? local.assignees),
+      watchers: normalizeNames(data.watchers ?? data.watchers_json ?? local.watchers),
+      priority: data.priority ?? local.priority,
+      project: data.project ?? local.project,
+    })
+    emit('saved', data)
+
+  } catch (e: any) {
+    console.error('[PATCH task] error', e?.response?.status, e?.response?.data)
+    alert(e?.response?.data?.detail ?? e.message ?? '저장 실패')
+  } finally {
+    saving.value = false
+  }
 }
-
-
 
 function normalizeNames(v: any): string[] {
   if (Array.isArray(v)) return v.map(x => String(x).trim()).filter(Boolean)
@@ -444,21 +565,47 @@ function toWorkTimeString(min?: number): string {
   const h = Math.floor(min/60), m = min%60
   return `${h}:${String(m).padStart(2,'0')}`
 }
-function toPatchPayload(x: any){
-  return {
+function shallowEqual(a: any, b: any) {
+  if (Array.isArray(a) && Array.isArray(b)) return a.join('|') === b.join('|')
+  return a === b
+}
+
+function toPatchPayload(x: any, original: any){
+  const toMinutes = (v: string | null | undefined) => {
+    if (!v) return null
+    const s = String(v).trim()
+    if (/^\d+:\d{2}$/.test(s)) { const [h,m]=s.split(':').map(Number); return h*60+m }
+    if (/^\d+$/.test(s)) return Number(s)
+    return null
+  }
+
+  const base = {
     title: x.title,
     note: x.note,
     status: x.status,
     task_type: x.task_type,
     start_date: x.start_date || null,
     end_date: x.end_date || null,
-        completed_date: x.completed_date || null,
-    work_time: x.work_time || null,
+    completed_date: x.completed_date || null,
+    work_time_min: toMinutes(x.work_time),
     assignees: x.assignees,
     watchers: x.watchers,
     priority: x.priority,
     project: x.project,
   }
+
+  const diff: Record<string, any> = {}
+  for (const k of Object.keys(base)) {
+    const cur = (base as any)[k]
+    const prev = (k === 'work_time_min') ? (original?.work_time_min ?? null) : original?.[k]
+    if (!shallowEqual(cur, prev)) diff[k] = cur
+  }
+
+  // 실제 바뀌지 않았다면 task_type/status는 보내지 않음 (정책 충돌 최소화)
+  if (diff.task_type === undefined) delete diff.task_type
+  if (diff.status === undefined) delete diff.status
+
+  return diff
 }
 
 /* -------------------- Inline components -------------------- */
@@ -498,8 +645,8 @@ const Chip = defineComponent({
   props: {
     active: { type: Boolean, default: false },
     variant: { type: String as PropType<'todo'|'in_progress'|'feedback'|'on_hold'|'canceled'|'done'|'normal'|'warn'|'danger'|'low'|string>, default: '' },
-    twActive: { type: String, default: '' },   // ✅ 외부 주입(카드와 동일 클래스)
-    twInactive: { type: String, default: '' }, // ✅ 비활성 클래스
+    twActive: { type: String, default: '' },   // 외부 주입(카드와 동일 클래스)
+    twInactive: { type: String, default: '' }, // 비활성 클래스
   },
   emits: ['click'],
   setup(p, { slots, emit }) {
@@ -514,15 +661,8 @@ const Chip = defineComponent({
         case 'danger': return 'chip-red'
       }
     }
-    // ✅ 공통 타이포(상태/중요도 칩 모두 동일 적용)
-    //  - 굵기: font-bold
-    //  - 글자색: text-white (STATUS_BADGE_TW에도 들어있지만 중복 적용 OK)
-    //  - 모양/여백: rounded-full + px-3 py-1
-    //  - 크기: text-[13px] (원하면 text-sm 등으로 조정)
     const ACTIVE_TYPO = 'font-bold text-white rounded-full px-3 py-1 text-[13px]'
     const INACTIVE_TYPO = 'rounded-full px-3 py-1 text-[13px]'
-
-
 
     const classes = computed(() => {
       if (p.active) {
@@ -530,7 +670,7 @@ const Chip = defineComponent({
         return ['chip', ACTIVE_TYPO, activeClass].filter(Boolean).join(' ')
       }
       return ['chip', INACTIVE_TYPO, p.twInactive || 'bg-gray-100 text-gray-500 border border-gray-200'].join(' ')
-     })
+    })
     return () => h('button', { class: classes.value, onClick }, slots.default?.())
   }
 })
@@ -676,7 +816,7 @@ const TagInput = defineComponent({
 
 /* 카드 섹션(박스) */
 :where(.dark) .card{ background:#0b0b0b; }
-.card{ /* CardSection 컴포넌트에서 div에 class 추가한 게 아니므로, 부모가 넣어준 클래스 없이도 자연스럽게 보이도록 */
+.card{
   border:1px solid var(--border);
   border-radius:1rem;
   background:rgba(255,255,255,.7);
@@ -695,9 +835,9 @@ const TagInput = defineComponent({
   background:#000; color:#fff; border-color:#000;
 }
 .task-tab--inactive{
-  background:#fff; color:#374151; /* gray-700 */
+  background:#fff; color:#374151;
 }
-.task-tab--inactive:hover{ background:#f9fafb; } /* gray-50 */
+.task-tab--inactive:hover{ background:#f9fafb; }
 
 /* 버튼 */
 .btn-ghost{
@@ -728,7 +868,7 @@ const TagInput = defineComponent({
 .tag{
   display:inline-flex; align-items:center; gap:.25rem;
   padding:.25rem .5rem; border-radius:.5rem;
-  background:#f3f4f6; /* gray-100 */
+  background:#f3f4f6;
   font-size:.875rem;
 }
 .tag-remove{ color:#6b7280; }
