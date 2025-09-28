@@ -252,6 +252,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void
   (e: 'saved', payload: any): void
+  (e: 'changed', payload: { id: number; task_type?: string; status?: string }): void
+
 }>()
 
 const modelValueProxy = computed({
@@ -320,6 +322,7 @@ function onVoteStarted(summary: VoteSummary) {
   // 저장 직후 서버 재호출 없이 즉시 반영
   vote.value = summary
   mode.value = summary.is_open ? 'open' : (summary.total_votes > 0 ? 'closed' : 'create')
+  emit('changed', { id: local.id, task_type: '투표' })
 }
 function onVoteClosed() {
   // 서버는 이미 DONE으로 바뀌었을 것. 로컬도 맞춰서

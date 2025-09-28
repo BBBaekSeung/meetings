@@ -103,7 +103,19 @@ function onSaved(updated: T) {
   }
 }
 
-
+function onTaskChanged(p: { id: number; task_type?: string; status?: string }) {
+  const arr = actions.value || []
+  const idx = arr.findIndex(a => a.id === p.id)
+  if (idx >= 0) {
+    const merged = { ...arr[idx], ...p }
+    actions.value = [...arr.slice(0, idx), merged, ...arr.slice(idx + 1)]
+  } else {
+    actions.value = [p, ...arr]
+  }
+  if (selected.value?.id === p.id) {
+    selected.value = { ...selected.value, ...p }
+  }
+}
 
 </script>
 
@@ -114,7 +126,7 @@ function onSaved(updated: T) {
 
   <div v-else class="space-y-3">
     <button
-      v-for="a in actions" :key="a.id ?? a.title"
+      v-for="a in actions" :key="(a.id ?? a.title) + ':' + (a.task_type || '')"
       class="w-full text-left p-4 rounded-xl border hover:bg-gray-50 transition"
       @click="openDetail(a)"
     >
@@ -154,5 +166,6 @@ function onSaved(updated: T) {
     :task="selected"
     :meetingId="meetingId || ''"
     @saved="onSaved"
+    @changed="onTaskChanged"
   />
 </template>
