@@ -6,12 +6,11 @@
     <div v-if="err" class="text-red-600 text-sm">{{ err }}</div>
 
     <div v-if="mobile" class="space-y-3">
-      <div class="text-sm">Meeting ID: {{ mobile.id }}</div>
       <a class="underline text-sm" :href="mobile.mobile_url" target="_blank">모바일 업로드 열기</a>
       <img :src="mobile.qr_data_uri" alt="QR for mobile upload" class="w-48 h-48" />
 
       <div class="text-xs text-gray-500">
-        상태 감지 중… (업로드가 시작되면 자동으로 이동합니다)
+        (업로드가 시작되면 자동으로 이동합니다)
       </div>
     </div>
   </div>
@@ -26,6 +25,7 @@ import { useMeeting } from '../composables/useMeeting' // ✅ 반응형 ID 받�
 const router = useRouter()
 const mobile = ref<{ id: string; mobile_url: string; qr_data_uri: string }|null>(null)
 const err = ref('')
+const props = defineProps<{ meetingName?: string }>()  // ← 상단에 추가
 
 const meetingId = ref('')                 // 처음엔 빈 값
 const meetingQuery = useMeeting(meetingId) // ✅ ref 그대로 전달
@@ -42,7 +42,8 @@ watch(statusRef, (status) => {
 async function handle(){
   err.value = ''
   try {
-    const m = await createMeeting('mobile')
+
+    const m = await createMeeting('mobile', props.meetingName)
     if (!m.mobile_url || !m.qr_data_uri) throw new Error('모바일 URL/QR 누락')
     mobile.value = { id: m.id, mobile_url: m.mobile_url, qr_data_uri: m.qr_data_uri }
     meetingId.value = m.id               // ✅ 여기서부터 폴링 시작

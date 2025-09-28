@@ -1,11 +1,12 @@
 # apps/api/routers/handoff.py
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Body
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 import os, uuid, urllib.parse
 import base64, io
 import qrcode
+from pydantic import BaseModel
 
 from .. import database, models
 
@@ -13,6 +14,9 @@ router = APIRouter(prefix="/handoff")
 
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
 UPLOAD_TTL_SEC = int(os.getenv("UPLOAD_TTL_SEC", "1200"))
+
+class StartReq(BaseModel):
+    name: str | None = None
 
 def get_db():
     db = database.SessionLocal()
@@ -22,8 +26,10 @@ def get_db():
         db.close()
 
 @router.post("/start")
-def start_handoff(db: Session = Depends(get_db)):
+def start_handoff(payload: StartReq = Body(default=None), db: Session = Depends(get_db)):
+    name = (payload.name or "").strip() if payload else None
     m = models.Meeting(
+        name=name,  # ← ★ 여기서 저장!
         status=models.MeetingStatus.PENDING_UPLOAD,
         progress=0,
         upload_token=uuid.uuid4().hex[:16],
@@ -32,7 +38,8 @@ def start_handoff(db: Session = Depends(get_db)):
     db.add(m); db.commit(); db.refresh(m)
 
     q = urllib.parse.urlencode({"mid": str(m.id), "t": m.upload_token})
-    mobile_url = f"{PUBLIC_BASE_URL}/handoff/m/upload?{q}"
+    # ★ SPA 라우트로 보낼 것 (백엔드 HTML 아님)
+    mobile_url = f"{PUBLIC_BASE_URL}/m/upload?{q}"
     buf = io.BytesIO()
     qrcode.make(mobile_url).save(buf, format="PNG")
     qr_data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -158,39 +165,3 @@ btn.onclick = async () => {
 # apps/api/routers/handoff.py
 from fastapi.responses import HTMLResponse
 import base64, io, qrcode, urllib.parse
-
-@router.get("/qr", response_class=HTMLResponse)
-def qr(mid: str, t: str):
-    public_base = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
-    mobile_url = f"{public_base}/handoff/m/upload?{urllib.parse.urlencode({'mid': mid, 't': t})}"
-
-    buf = io.BytesIO()
-    qrcode.make(mobile_url).save(buf, format="PNG")
-    b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-
-    return f"""<!doctype html>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<body style="font-family:sans-serif;padding:24px">
-  <h3>모바일 업로드 QR</h3>
-  <img src="data:image/png;base64,{b64}" style="width:280px">
-  <p><a href="{mobile_url}">{mobile_url}</a></p>
-  <p style="color:#666">이 QR을 휴대폰으로 스캔하세요.</p>
-</body>"""
-
-# handoff.py에 추가
-@router.get("/demo", response_class=HTMLResponse)
-def demo():
-    return """<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
-<body style="font-family:sans-serif;padding:24px;line-height:1.5">
-  <button id="go">매직링크/QR 생성</button>
-  <div id="out" style="margin-top:16px"></div>
-  <script>
-    document.getElementById('go').onclick = async () => {
-      const r = await fetch('/handoff/start', {method:'POST'});
-      const j = await r.json();
-      document.getElementById('out').innerHTML =
-        `<img src="${j.qr_data_uri}" style="width:260px"><br>`+
-        `<a href="${j.mobile_url}">${j.mobile_url}</a><pre>${JSON.stringify(j,null,2)}</pre>`;
-    };
-  </script>
-</body>"""

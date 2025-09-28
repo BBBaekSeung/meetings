@@ -70,25 +70,6 @@ class TaskResponse(TaskBase):
         use_enum_values = True
 
 
-# ✅ 추가: 부분 업데이트 전용 (모든 필드 Optional)
-class TaskUpdate(BaseModel):
-    title: Optional[str] = None
-    status: Optional[TaskStatus] = None
-    task_type: Optional[TaskType] = None
-    assignee: Optional[str] = None
-    assignees: Optional[List[str]] = None
-    watchers: Optional[List[str]] = None
-    note: Optional[str] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    completed_date: Optional[date] = None
-    due_date: Optional[date] = None
-    work_time_min: Optional[int] = None
-    priority: Optional[Priority] = None
-    details_json: Optional[dict] = None
-    model_config = ConfigDict(from_attributes=True, use_enum_values=True)
-
-
 
 
 
@@ -112,15 +93,6 @@ class ChecklistItemOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     model_config = ConfigDict(from_attributes=True)
-
-class ChecklistItemCreate(BaseModel):
-    label: str
-
-class ChecklistItemUpdate(BaseModel):
-    label: Optional[str] = None
-    is_done: Optional[bool] = None
-    order: Optional[int] = None
-
 
 # 투표기능
 # apps/api/schemas.py (추가)

@@ -4,7 +4,6 @@
     <h1 class="text-2xl font-semibold">모바일 업로드</h1>
     <div class="text-sm text-gray-600">{{ meeting?.name || mid }}</div>
 
-
     <!-- 파일 업로드 -->
     <input
       type="file"
@@ -16,50 +15,18 @@
       @click="handle"
       :disabled="loading || !file"
     >
-      업로드
+      Upload
     </button>
 
-    <!-- ✅ 브라우저 녹음(준실시간) -->
-    <div class="pt-3 border-t mt-3 space-y-2">
-      <div class="text-sm font-medium">브라우저 녹음(준실시간)</div>
-      <div class="flex gap-2">
-        <button
-          class="px-3 py-1 rounded-xl border"
-          @click="startRecord"
-          :disabled="recBusy || recState !== 'idle'"
-        >
-          녹음 시작
-        </button>
-        <button
-          class="px-3 py-1 rounded-xl border"
-          @click="stopRecord"
-          :disabled="recBusy || recState !== 'recording'"
-        >
-          녹음 종료
-        </button>
-        <button
-          class="px-3 py-1 rounded-xl border"
-          @click="goDetail"
-          :disabled="!mid"
-        >
-          상태 보기
-        </button>
-      </div>
-      <div class="text-sm">
-        상태: {{ recState }} · 전송 청크: {{ sentChunks }}
-        <span v-if="recMsg" class="ml-2 text-gray-600">{{ recMsg }}</span>
-        <span v-if="recErr" class="ml-2 text-red-600">오류: {{ recErr }}</span>
-      </div>
-    </div>
 
     <div v-if="msg" class="text-sm">{{ msg }}</div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { uploadToMeeting, uploadChunk, finalizeRecording } from '../lib/api'
+import { uploadToMeeting, uploadChunk, finalizeRecording, api } from '../lib/api'
 import { useMeeting } from '../composables/useMeeting'
 
 const route = useRoute()
@@ -67,8 +34,7 @@ const router = useRouter()
 
 const mid = computed(() => String(route.query.mid || ''))
 const t = computed(() => String(route.query.t || ''))
-const { data: meeting, isLoading: meetingLoading, error: meetingError } = useMeeting(mid)
-
+const { data: meeting } = useMeeting(mid)
 
 // ---- 파일 업로드 ----
 const file = ref<File | null>(null)
@@ -86,8 +52,8 @@ async function handle() {
   msg.value = '업로드 중...'
   try {
     await uploadToMeeting(mid.value, t.value, file.value)
-    // ✅ 모바일은 안내 문구만
-    msg.value = '업로드 완료! 데스크톱 화면에서 자동으로 결과가 표시됩니다.'
+    // ✅ 업로드 성공 후 최종 메시지
+    msg.value = '완료되었습니다. 데스크탑에서 확인하세요.'
   } catch (e: any) {
     msg.value = e?.message || '업로드 실패'
   } finally {
@@ -149,7 +115,7 @@ async function startRecord() {
       }
     }
 
-    // 2초 간격으로 청크 전송
+    // 3초 간격으로 청크 전송
     mediaRecorder.start(3000)
   } catch (e: any) {
     recErr.value = e?.message || '마이크 권한 거부 또는 초기화 실패'
@@ -160,18 +126,18 @@ async function stopRecord() {
   if (recState.value !== 'recording' || !mediaRecorder) return
   recBusy.value = true
   recState.value = 'finalizing'
-  recMsg.value = '처리 시작...'
+  // ✅ 100% 이후 사용자에게 '처리중..' 단계가 보이도록
+  recMsg.value = '처리중.. (업로드 100%)'
 
   try {
     // 녹음 중지 → 마지막 dataavailable 발생
     mediaRecorder.stop()
-
-    // 너무 복잡한 이벤트 대기 로직 대신 짧게 대기(마지막 청크 전송 여유)
+    // 마지막 청크 전송 여유
     await new Promise((r) => setTimeout(r, 300))
   } catch {
     /* noop */
   } finally {
-    // 마이크 해제(간단 정리)
+    // 마이크 해제
     try {
       streamRef?.getTracks().forEach((t) => t.stop())
     } catch {}
@@ -181,7 +147,10 @@ async function stopRecord() {
 
   try {
     await finalizeRecording(mid.value, t.value)
-    recMsg.value = '처리가 시작되었습니다. 상태 보기로 이동해 확인하세요.'
+    // ✅ 처리 완료 알림
+    recMsg.value = '완료되었습니다. 데스크탑에서 확인하세요.'
+    // 필요 시 토스트/알림 컴포넌트 사용 가능
+    // alert('업로드가 완료되었습니다! 데스크탑에서 확인해주세요.')
     router.push(`/meetings/${mid.value}`)
   } catch (e: any) {
     recErr.value = e?.message || 'finalize 실패'
@@ -194,4 +163,19 @@ async function stopRecord() {
 function goDetail() {
   if (mid.value) router.push(`/meetings/${mid.value}`)
 }
+
+// ✅ 데스크탑에서 지정한 회의 이름을 모바일에서도 반영
+onMounted(async () => {
+  const incomingName = String(route.query.name || '').trim()
+  if (mid.value && incomingName) {
+    // meeting.name이 비어있을 때만 패치
+    if (!meeting.value?.name) {
+      try {
+        await api.patch(`/meetings/${mid.value}`, { name: incomingName })
+      } catch (e) {
+        console.warn('회의 이름 PATCH 실패', e)
+      }
+    }
+  }
+})
 </script>

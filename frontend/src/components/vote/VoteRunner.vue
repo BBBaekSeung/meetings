@@ -2,7 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { getVote, castVote } from '../../lib/vote'
 
-
+const emit = defineEmits<{ (e: 'voted'): void }>()   // ✅ 추가
 const props = defineProps<{ meetingId: string; taskId: number; voter: string }>()
 const vote = ref<any>(null)
 const selected = ref<number|null>(null)
@@ -17,6 +17,8 @@ async function submit() {
   if (selected.value == null) return
   await castVote(props.meetingId, props.taskId, props.voter, selected.value)
   await refresh()
+  emit('voted')   // ✅ 부모에게 알림 → 결과로 전환 트리거
+
 }
 </script>
 

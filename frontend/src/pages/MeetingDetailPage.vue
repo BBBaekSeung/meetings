@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onActivated } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import { useMeeting } from '../composables/useMeeting'
 import { updateMeetingName } from '../lib/api'
 import ProgressBar from '../components/ProgressBar.vue'
 import SummaryPanel from '../components/SummaryPanel.vue'
 import TasksPanel from '../components/TasksPanel.vue'
-import FullscriptPanel from '../components/FullscriptPanel.vue'
 import TranscriptBubbles from '../components/TranscriptBubbles.vue'
+import HoverSidebar from '../components/HoverSidebar.vue'
+
 
 type LeftTab = 'summary' | 'fullscript'
 const leftTab = ref<LeftTab>('summary')
@@ -52,9 +53,12 @@ function cancelEdit() {
 const onRefresh = () => {
   void refetch()
 }
+onActivated(() => { void refetch?.() })
+
 </script>
 
 <template>
+  <HoverSidebar />
   <!-- ✅ 최상위에서 meeting 유무 분기 (template 블록으로 감싸 주석/공백 간섭 방지) -->
   <template v-if="meeting">
     <div class="max-w-5xl mx-auto p-6 space-y-6">
@@ -175,7 +179,7 @@ const onRefresh = () => {
           <h2 class="text-lg font-semibold mb-3">업무(Task)</h2>
         <!-- ✅ 저장 이벤트를 받아서 refetch -->
         <TasksPanel
-          :actions="(meeting as any)?.actions ?? (meeting as any)?.result?.actions"
+          :actions="(meeting as any)?.actions || []"
           :meetingId="meeting?.id"
           @saved="refetch()"
         />

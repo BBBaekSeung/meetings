@@ -27,17 +27,25 @@
     <div v-else-if="filtered.length === 0" class="text-sm text-gray-500">회의가 없습니다.</div>
 
     <nav v-else class="space-y-2">
-      <RouterLink
+      <div
         v-for="m in filtered"
         :key="m.id"
-        :to="`/meetings/${m.id}`"
-        class="block rounded-xl border p-3 hover:bg-gray-50 transition"
+        class="relative rounded-xl border p-3 hover:bg-gray-50 transition"
       >
-        <div class="font-medium truncate" :title="m.name">{{ m.name }}</div>
-        <div class="mt-1 text-xs text-gray-500">
-          {{ formatDate(m.created_at || m.updated_at) }}
-        </div>
-      </RouterLink>
+        <RouterLink :to="`/meetings/${m.id}`" class="block pr-9">
+          <div class="font-medium truncate" :title="m.name">{{ m.name }}</div>
+          <div class="mt-1 text-xs text-gray-500">
+            {{ formatDate(m.created_at || m.updated_at) }}
+          </div>
+        </RouterLink>
+        <button
+          class="absolute top-2 right-2 inline-flex items-center justify-center p-1.5 rounded-md border hover:bg-gray-100"
+          title="삭제"
+          @click.stop="onDelete(m)"
+        >
+          🗑️
+        </button>
+      </div>
     </nav>
   </aside>
 </template>
@@ -45,9 +53,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useMeetings } from '../composables/useMeeting'
+import { deleteMeeting } from '../lib/api'
+import { useRouter, useRoute } from 'vue-router'
 
 const keyword = ref('')
 const { data, isLoading, error, refetch } = useMeetings({ order: 'desc', limit: 50 })
+const router = useRouter()
+const route = useRoute()
 
 const filtered = computed(() => {
   const list = data?.value || []
@@ -62,6 +74,17 @@ function formatDate(s?: string) {
     return new Date(s).toLocaleString('ko-KR')
   } catch { 
     return s 
+  }
+}
+async function onDelete(m: any) {
+  if (!confirm(`회의를 삭제할까요?\n"${m.name || '제목 없음'}"`)) return
+  await deleteMeeting(m.id)
+  await refetch()
+  // 상세 화면에서 삭제한 경우, 목록 첫 항목으로 이동
+  if (String(route.params.id) === m.id) {
+    const next = (data?.value || []).find(x => x.id !== m.id)
+    if (next) router.replace(`/meetings/${next.id}`)
+    else router.replace(`/`)
   }
 }
 </script>

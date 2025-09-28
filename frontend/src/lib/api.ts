@@ -10,6 +10,13 @@ export const api = axios.create({
   headers: { Accept: 'application/json' },
 })
 
+api.interceptors.request.use((config) => {
+  if (config.method === 'get' && typeof config.url === 'string' && /\/meetings\/[^/?]+$/.test(config.url)) {
+    config.params = { ...(config.params || {}), view: config.params?.view ?? 'full' }
+  }
+  return config
+})
+
 export async function createMeeting(source: 'web'|'mobile' = 'web', name?: string) {
   const q = new URLSearchParams({ source })
   if (name && name.trim()) q.set('name', name.trim())
@@ -189,4 +196,10 @@ export async function patchTask(
     patch
   )
   return data
+}
+
+
+export async function deleteMeeting(id: string) {
+  const { data } = await api.delete(`/meetings/${id}`)
+  return data as { ok: boolean }
 }

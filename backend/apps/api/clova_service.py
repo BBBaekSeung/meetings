@@ -236,22 +236,6 @@ def _post_upload(file_path: str, completion: str) -> dict:
         raise Exception(f"Clova Upload {resp.status_code}: {resp.text}")
     return resp.json()
 
-def _poll(status_url: str) -> dict:
-    deadline = time.time() + POLL_TIMEOUT
-    headers = {"Accept": "application/json;UTF-8", "X-CLOVASPEECH-API-KEY": SECRET}
-    while True:
-        if time.time() > deadline:
-            raise TimeoutError("Clova Transcription Timeout")
-        time.sleep(POLL_INTERVAL)
-        r = requests.get(status_url, headers=headers, timeout=30)
-        if r.status_code != 200:
-            raise Exception(f"Clova Poll {r.status_code}: {r.text}")
-        js = r.json()
-        st = (js.get("status") or "").lower()
-        if st in {"completed", "ready", "done"}:
-            return js
-        if st in {"failed", "error"}:
-            raise Exception(f"Clova Transcription Failed: {json.dumps(js, ensure_ascii=False)}")
 
 def transcribe_audio(file_path: str) -> Tuple[str, List[Dict[str, Any]]]:
     js = _post_upload(file_path, completion="sync")  # sync 유지

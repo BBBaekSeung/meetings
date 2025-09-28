@@ -114,7 +114,7 @@ class Task(Base):
     completed_date = Column(Date, nullable=True)
 
     # 상태/유형/우선순위
-    status    = Column(SAEnum(TaskStatus, native_enum=False), nullable=False, default=TaskStatus.TODO)
+    status    = Column(SAEnum(TaskStatus, native_enum=False), nullable=False, default=TaskStatus.IN_PROGRESS)
     task_type = Column(SAEnum(TaskType,    native_enum=False), nullable=False, default=TaskType.GENERAL)
     priority  = Column(SAEnum(Priority,    native_enum=False), nullable=True)
     details_json = Column(JSONUnicode, nullable=True)

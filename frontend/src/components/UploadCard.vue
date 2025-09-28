@@ -2,14 +2,14 @@
   <div class="p-6 rounded-2xl border space-y-4">
     <h2 class="text-xl font-semibold">데스크톱에서 업로드</h2>
     <button class="px-4 py-2 rounded-xl border" @click="handleCreate" :disabled="loading">
-      미팅 생성(토큰 발급)
+      회의 생성
     </button>
 
     <template v-if="meetingId">
       <div class="space-y-3">
         <input type="file" accept="audio/*,video/mp4,video/quicktime" @change="onFile" />
         <button class="px-4 py-2 rounded-xl border" @click="handleUpload" :disabled="loading || !file">
-          업로드 실행
+          Upload
         </button>
         <!-- ✅ 신규: 브라우저 녹음(준실시간 청크) -->
         <div class="pt-3 border-t mt-3 space-y-2">
@@ -17,13 +17,9 @@
           <div class="flex gap-2">
             <button class="px-3 py-1 rounded-xl border" @click="startRecord" :disabled="recBusy || recState!=='idle'">녹음 시작</button>
             <button class="px-3 py-1 rounded-xl border" @click="stopRecord" :disabled="recBusy || recState!=='recording'">녹음 종료</button>
-            <button class="px-3 py-1 rounded-xl border" @click="goDetail" :disabled="!meetingId">상태 보기</button>
+            <button class="px-3 py-1 rounded-xl border" @click="goDetail" :disabled="!meetingId">Upload</button>
           </div>
-          <div class="text-sm">
-            상태: {{ recState }} · 전송 청크: {{ sentChunks }}
-            <span v-if="recMsg" class="ml-2 text-gray-600">{{ recMsg }}</span>
-            <span v-if="recErr" class="ml-2 text-red-600">오류: {{ recErr }}</span>
-          </div>
+          
         </div>
       </div>
     </template>

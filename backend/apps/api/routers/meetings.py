@@ -22,7 +22,7 @@ from ..schemas import MeetingCreateResponse, MeetingStatusResponse
 from ..clova_service import transcribe_audio
 from ..llm_service import summarize_and_extract
 from ..task_classifier import classify_task_type
-from ..models import Task, TaskType, TaskStatus, Priority
+from ..models import Task, TaskType, TaskStatus, Priority, Meeting
 from .fullscript import normalize_segments, to_lines
 
 
@@ -69,9 +69,6 @@ def _parse_date(s):
 # === [추가] 청크 저장 루트 ===
 UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", str(Path(tempfile.gettempdir()) / "smart-minutes")))
 
-def _meeting_parts_dir(meeting_id: str) -> Path:
-    return UPLOAD_ROOT / meeting_id / "parts"
-
 def _ensure_dir(p: Path):
     p.mkdir(parents=True, exist_ok=True)
 
@@ -116,97 +113,6 @@ def _next_default_name(db) -> str:
             mx = max(mx, 1)
     # 1부터 시작: base(=나의 회의)도 이미 있으면 2부터
     return f"{base}{mx+1}" if rows else f"{base}1"
-
-# 파일 상단 util 근처에 추가
-import json, time, threading
-_manifest_lock = threading.Lock()
-
-def _manifest_path(meeting_id: str) -> Path:
-    return _meeting_parts_dir(meeting_id) / "manifest.json"
-
-def _load_manifest(meeting_id: str) -> dict:
-    p = _manifest_path(meeting_id)
-    if not p.exists():
-        return {"received": [], "bytes": 0, "first_seq": None, "last_seq": None, "updated_at": None, "content_types": {}}
-    try:
-        return json.loads(p.read_text("utf-8"))
-    except Exception:
-        return {"received": [], "bytes": 0, "first_seq": None, "last_seq": None, "updated_at": None, "content_types": {}}
-
-def _save_manifest(meeting_id: str, mf: dict):
-    p = _manifest_path(meeting_id)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(mf, ensure_ascii=False, indent=2), "utf-8")
-
-
-def _probe_duration_sec(path: str) -> float:
-    import subprocess, json
-
-    # 1) stream.duration 우선
-    try:
-        out = subprocess.check_output(
-            [
-                "ffprobe",
-                "-v", "error",
-                "-select_streams", "a:0",
-                "-show_entries", "stream=duration",
-                "-of", "json",
-                path
-            ],
-            stderr=subprocess.STDOUT
-        ).decode("utf-8", "ignore")
-        js = json.loads(out)
-        dur = None
-        for st in (js.get("streams") or []):
-            d = st.get("duration")
-            if d is not None:
-                try:
-                    dur = float(d)
-                    break
-                except Exception:
-                    pass
-        if dur is not None and dur > 0:
-            return dur
-    except Exception:
-        pass
-
-    # 2) format.duration 폴백
-    try:
-        out = subprocess.check_output(
-            [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                path
-            ],
-            stderr=subprocess.STDOUT
-        ).decode("utf-8", "ignore").strip()
-        return float(out) if out else 0.0
-    except Exception:
-        return 0.0
-
-# 파일 상단 유틸 근처에 추가
-def _wait_for_tmp_flush(dirpath: Path, timeout_sec: float = 3.0):
-    import time
-    deadline = time.time() + timeout_sec
-    while time.time() < deadline:
-        tmps = list(dirpath.glob("*.tmp"))
-        if not tmps:
-            return
-        time.sleep(0.05)  # 50ms
-
-# 파일 상단 유틸 근처에 추가
-def _ffprobe_ok(path: Path) -> bool:
-    try:
-        out = subprocess.check_output(
-            ["ffprobe","-v","error","-select_streams","a:0","-show_entries","stream=codec_type","-of","csv=p=0",str(path)],
-            stderr=subprocess.STDOUT
-        ).decode("utf-8","ignore").strip()
-        return bool(out)  # a:0 스트림을 읽을 수 있으면 OK
-    except Exception:
-        return False
-
 
 def now_utc():
     return datetime.now(timezone.utc)
@@ -259,7 +165,7 @@ def get_db():
 def require_meeting(db: Session, meeting_id: str) -> models.Meeting:
     m = db.get(models.Meeting, str(meeting_id))  # ← PK가 String(36)이므로 str로!
     if not m:
-        raise HTTPException(status_code=404, detail="UNKNOWN_MEETING")
+        raise HTTPException(status_code=404, detail="MEETING_NOT_FOUND")
     return m
 
 # ========== 1) 회의 생성 ==========
@@ -320,7 +226,7 @@ def create_meeting(
             host = request.headers.get("host", "")
             scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
             base = f"{scheme}://{host}"
-        mobile_url = f"{base}/handoff/m/upload?mid={m.id}&t={m.upload_token}"
+        mobile_url = f"{base}/m/upload?mid={m.id}&t={m.upload_token}"
         resp["mobile_url"] = mobile_url
         resp["qr_data_uri"] = _qr_data_uri(mobile_url)
 
@@ -613,92 +519,6 @@ async def upload_chunk(
         db.commit()
 
     return {"accepted": True, "seq": seq, "size": size}
-def _concat_convert_and_process_sync(meeting_id_str: str):
-    parts_dir = _meeting_parts_dir(meeting_id_str)
-    lock_path = parts_dir / "parts.lock.json"
-
-    # 1) 스냅샷 우선 사용 (없으면 기존 glob 폴백)
-    if lock_path.exists():
-        try:
-            paths = json.loads(lock_path.read_text("utf-8"))
-            parts = [Path(p) for p in paths]
-        except Exception:
-            parts = sorted(parts_dir.glob("part_*.webm"))
-    else:
-        parts = sorted(parts_dir.glob("part_*.webm"))
-
-    if not parts:
-        raise RuntimeError("NO_PARTS")
-
-    # 2) (선택) 간단 유효성 필터: 존재/최소 크기
-    valid = []
-    dropped = []
-    MIN_BYTES = int(os.getenv("MIN_PART_BYTES", "2048"))
-
-    for p in parts:
-        try:
-            if not p.exists():
-                dropped.append((p.name, "missing"))
-                continue
-            sz = p.stat().st_size
-            if sz < MIN_BYTES:
-                dropped.append((p.name, f"too_small:{sz}"))
-                continue
-            if not _ffprobe_ok(p):
-                dropped.append((p.name, "ffprobe_fail"))
-                continue
-            valid.append(p)
-        except Exception as ex:
-            dropped.append((p.name, f"stat_err:{ex}"))
-
-    if dropped:
-        logger.info("concat filter: dropped parts=%s", dropped)
-
-    if not valid:
-        raise RuntimeError("NO_VALID_PARTS")
-    # 3) concat list 파일 작성
-    list_path = parts_dir / "parts.txt"
-    with list_path.open("w", encoding="utf-8") as f:
-        for p in valid:
-            f.write(f"file '{p.as_posix()}'\n")
-
-    merged_dir = parts_dir.parent
-    merged_wav  = merged_dir / "merged.wav"
-
-    # 4) ‘복사(-c copy)’ 금지: 즉시 PCM 디코드 + 에러 관용
-    subprocess.run(
-        [
-            "ffmpeg","-y",
-            "-loglevel","error",                  # 에러만 출력
-            "-fflags","+genpts+discardcorrupt",   # 손상 패킷 건너뛰기
-            "-err_detect","ignore_err",           # 디코드 오류 무시
-            "-analyzeduration","0",               # 빠른 분석
-            "-probesize","32k",                   # 빠른 프로빙
-            "-i", str(stream_path),
-            "-ac","1","-ar","16000",
-            "-c:a","pcm_s16le",
-            str(merged_wav),
-        ],
-        check=True
-    )
-
-    # 5) (로그) 최종 길이 진단
-    dur = _probe_duration_sec(str(merged_wav))
-    logger.info("merged.wav duration=%.3f sec", dur)
-
-    # 6) 파이프라인 후속 처리
-    _process_pipeline_db(meeting_id_str, str(merged_wav))
-
-    # 7) 청소 (lock은 남겨도 됨 — 필요시 주석 해제)
-    try:
-        list_path.unlink(missing_ok=True)
-        # lock_path.unlink(missing_ok=True)
-        for p in parts_dir.glob("part_*.webm"):
-            p.unlink(missing_ok=True)
-        parts_dir.rmdir()
-    except Exception:
-        pass
-
 
 
 @router.post("/{meeting_id}/finalize", status_code=202)
@@ -981,7 +801,7 @@ def _save_tasks_table(meeting_id_str: str, actions: list[dict]):
                 "canceled": TaskStatus.CANCELED,
                 "cancelled": TaskStatus.CANCELED,
                 "done": TaskStatus.DONE,
-            }.get((a.get("status") or "").lower(), TaskStatus.TODO),
+            }.get((a.get("status") or "").lower(), TaskStatus.IN_PROGRESS),
                 task_type    = {
                     "일반": TaskType.GENERAL, "체크리스트": TaskType.CHECKLIST,
                     "데이터 취합": TaskType.COLLECT, "투표": TaskType.VOTE,
@@ -1080,34 +900,12 @@ def get_fullscript_text(
     return Response(content=text_body, media_type="text/plain; charset=utf-8")
 
 
-@router.get("/{meeting_id}/fullscript.json")
-def get_fullscript_json(
-    meeting_id: str,
-    db: Session = Depends(get_db),
-    merge_consecutive: bool = Query(True, description="같은 화자의 연속 발화를 한 줄로 병합할지 여부 (기본: true)"),
-):
-    mt: models.Meeting = db.get(models.Meeting, meeting_id)
-    if not mt:
-        raise HTTPException(404, "Meeting not found")
-    if not mt.result:
-        raise HTTPException(409, "Result not ready")
 
-    try:
-        result: Dict[str, Any] = mt.result if isinstance(mt.result, dict) else json.loads(mt.result)
-    except Exception:
-        raise HTTPException(500, "Invalid result format")
-
-    segments = result.get("segments") or []
-    if not isinstance(segments, list):
-        raise HTTPException(500, "segments missing or invalid")
-
-    norm = normalize_segments(segments)
-    lines = to_lines(norm, merge=merge_consecutive)
-
-    # UI에서 줄 단위로 렌더하기 쉽게 JSON 배열로 반환
-    return {
-        "meeting_id": meeting_id,
-        "merge_consecutive": merge_consecutive,
-        "lines": lines,  # ["참가자1: ...", "참가자2: ...", ...]
-        "count": len(lines),
-    }
+@router.delete("/{meeting_id}", status_code=200)   # ← 트레일링 슬래시도 허용(안전)
+def delete_meeting(meeting_id: str, db: Session = Depends(get_db)):
+    m = db.get(Meeting, meeting_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="MEETING_NOT_FOUND")
+    db.delete(m)
+    db.commit()
+    return {"ok": True}

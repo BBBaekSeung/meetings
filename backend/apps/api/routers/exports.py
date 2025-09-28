@@ -16,7 +16,7 @@ def get_db():
 def require_meeting(db: Session, meeting_id: str) -> models.Meeting:
     m = db.get(models.Meeting, meeting_id)
     if not m:
-        raise HTTPException(status_code=404, detail="UNKNOWN_MEETING")
+        raise HTTPException(status_code=404, detail="MEETING_NOT_FOUND")
     return m
 
 @router.post("/{meeting_id}/exports")

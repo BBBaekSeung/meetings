@@ -8,16 +8,6 @@
       class="absolute right-0 top-0 h-full w-full sm:w-[640px] bg-white dark:bg-zinc-900 z-50 shadow-2xl
              rounded-none sm:rounded-l-2xl flex flex-col"
     >
-      <!-- Top Tabs -->
-      <div class="px-5 pt-4 select-none">
-        <div class="flex items-center gap-3 text-[13px]">
-          <TaskTab active>업무 상세</TaskTab>
-          <TaskTab>코멘트</TaskTab>
-          <TaskTab>파일</TaskTab>
-          <TaskTab>업무 이력</TaskTab>
-          <TaskTab>결제</TaskTab>
-        </div>
-      </div>
 
       <!-- Header -->
       <div class="px-5 py-4 border-b flex items-center gap-2">
@@ -54,13 +44,6 @@
         <!-- 프로젝트 / 업무 유형 -->
         <CardSection>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormBox label="프로젝트">
-              <input
-                v-model="local.project"
-                placeholder="예) Cloud Tech LABs 업무보고"
-                class="input"
-              />
-            </FormBox>
 
             <FormBox label="업무 유형">
               <div class="relative">
@@ -206,7 +189,18 @@
             @closed="onVoteClosed"
           />
           <div v-else-if="mode === 'open'" class="space-y-6">
-            <VoteRunner :meeting-id="props.meetingId" :task-id="local.id" :voter="currentUserId" />
+            <template v-if="vote?.my_option_id">
+              <!-- ✅ 본인 투표 완료 → 결과 즉시 표시 -->
+              <VoteResult :meeting-id="props.meetingId" :task-id="local.id" />
+            </template>
+            <template v-else>
+              <VoteRunner
+                :meeting-id="props.meetingId"
+                :task-id="local.id"
+                :voter="currentUserId"
+                @voted="refreshVote()"      
+              />
+            </template>
             <VoteManagePanel :meeting-id="props.meetingId" :task-id="local.id" />
           </div>
           <VoteResult v-else-if="mode === 'closed'" :meeting-id="props.meetingId" :task-id="local.id" />
@@ -288,9 +282,12 @@ const draftTitle = ref('')
 
 function startEditTitle() {
   if (!props.task) return
-  draftTitle.value = (local.title || '').trim() || '주간업무보고 템플릿'
+  // ↓ 기본값 '주간업무보고 템플릿' 제거
+  draftTitle.value = (local.title || '').trim()
   editingTitle.value = true
 }
+
+
 async function saveEditTitle() {
   if (!props.meetingId || local.id == null) { editingTitle.value = false; return }
   const newTitle = draftTitle.value.trim()
@@ -317,6 +314,9 @@ const vote = ref<any>(null)
 const currentUserId = 'user-123' // TODO: 실제 로그인 사용자 ID 주입
 
 function onVoteStarted(summary: VoteSummary) {
+  // ✅ 로컬 분기 키를 즉시 '투표'로 전환해야 화면이 그대로 투표 섹션을 유지합니다.
+  local.task_type = '투표'
+
   // 저장 직후 서버 재호출 없이 즉시 반영
   vote.value = summary
   mode.value = summary.is_open ? 'open' : (summary.total_votes > 0 ? 'closed' : 'create')
@@ -443,9 +443,7 @@ function toYMD(v: any): string | null {
 }
 
 /** 헤더 제목 */
-const headerTitle = computed(() =>
-  local.title?.trim() ? local.title : '주간업무보고 템플릿'
-)
+const headerTitle = computed(() => (local.title ?? '').trim())
 
 watch(() => props.task, (t) => {
   if (!t) return
@@ -458,7 +456,10 @@ watch(() => props.task, (t) => {
   local.end_date       = toYMD(t.end_date)
   local.completed_date = toYMD(t.completed_date)
   local.work_time = toWorkTimeString(t.work_time_min)
-  local.assignees = normalizeNames(t.assignees_json ?? t.owner ?? [])
+   // ✅ 배열 우선: assignees → assignees_json → assignee → owner
+ local.assignees = normalizeNames(
+   t.assignees ?? t.assignees_json ?? t.assignee ?? t.owner ?? []
+ )
   local.watchers = normalizeNames(t.watchers_json ?? [])
   local.priority = t.priority ?? local.priority
   local.project = t.project ?? local.project
@@ -616,18 +617,6 @@ const CardSection = defineComponent({
   }
 })
 
-const TaskTab = defineComponent({
-  name: 'TaskTab',
-  props: { active: { type: Boolean, default: false } },
-  setup(p, { slots }) {
-    return () => h('div', {
-      class: [
-        'px-3 py-2 rounded-xl border text-[13px] leading-none cursor-default',
-        p.active ? 'bg-black text-white border-black' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700'
-      ]
-    }, slots.default?.())
-  }
-})
 
 const FormBox = defineComponent({
   name: 'FormBox',
@@ -824,20 +813,6 @@ const TagInput = defineComponent({
 }
 
 /* 상단 탭 */
-.task-tab{
-  padding:.5rem .75rem;
-  border-radius:.75rem;
-  border:1px solid var(--border);
-  font-size:13px;
-  line-height:1;
-}
-.task-tab--active{
-  background:#000; color:#fff; border-color:#000;
-}
-.task-tab--inactive{
-  background:#fff; color:#374151;
-}
-.task-tab--inactive:hover{ background:#f9fafb; }
 
 /* 버튼 */
 .btn-ghost{

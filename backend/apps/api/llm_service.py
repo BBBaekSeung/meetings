@@ -101,6 +101,23 @@ def _to_list(value: Any) -> List[Any]:
 def _safe_get(d: Any, key: str, default=None):
     return d.get(key, default) if isinstance(d, dict) else default
 
+# llm_service.py 상단 유틸 옆에 추가
+def _parse_names(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        names = [str(x).strip() for x in value if str(x).strip()]
+    elif isinstance(value, str):
+        parts = re.split(r",|·|、|，|/|\||\s+and\s+|\s+및\s+|\s+그리고\s+", value.strip(), flags=re.IGNORECASE)
+        names = [p.strip() for p in parts if p and p.strip()]
+    else:
+        names = []
+    # 중복 제거(순서 보존)
+    seen, uniq = set(), []
+    for n in names:
+        if n not in seen:
+            seen.add(n); uniq.append(n)
+    return uniq
 
 # ─────────────────────────────────────────────────────────────
 # 메인 함수
@@ -212,26 +229,40 @@ def summarize_and_extract(transcript: str) -> dict:
 
         # ---- actions 정규화 ----
         raw_items = _to_list(obj.get("action_items"))
-        actions: List[Dict[str, Any]] = []
+        actions = []
         for it in raw_items:
             if not isinstance(it, dict):
                 continue
             task = (it.get("task") or "").strip()
             if not task:
                 continue
-            assignee = it.get("assignee")
-            assignee = assignee.strip() if isinstance(assignee, str) and assignee.strip() else None
+
+            raw_assignee = it.get("assignee", None)
+            if raw_assignee is None:
+                raw_assignee = it.get("assignees", None)  # 복수형 키도 허용
+            names = _parse_names(raw_assignee)
+
+            primary = names[0] if names else None
+            all_assignees = names  # 팀 규칙: DRI 포함 전체 명단
+
             due = it.get("due_date")
             due = due.strip() if isinstance(due, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", due.strip()) else None
 
             actions.append({
                 "title": task[:200],
-                "owner": assignee,
+                # ✅ 신규/스키마-친화
+                "assignee": primary,
+                "assignees": all_assignees,
+                "due_date": due,
+                # ✅ 레거시 호환(프론트가 owner/due를 보던 경우)
+                "owner": primary,
                 "due": due,
+                # 그 외
                 "note": None,
                 "status": "todo",
                 "start_date": _today_ymd(),
             })
+
 
         return {"summary": summary, "actions": actions}
     

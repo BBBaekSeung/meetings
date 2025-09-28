@@ -54,11 +54,24 @@ function dateRange(a: T) {
 }
 
 // 담당자 전체 표시 (배열/문자열 모두 흡수)
+// 담당자 전체 표시 (배열/문자열 모두 흡수 + 폴백: assignee → owner + trim/uniq)
 function allAssignees(a: T): string[] {
   const v = a.assignees_json ?? a.assignees ?? []
-  if (Array.isArray(v)) return v.filter(Boolean)
-  if (typeof v === 'string' && v.trim()) return [v.trim()]
-  return []
+  let names: string[] = []
+
+  if (Array.isArray(v) && v.length) {
+    names = v.map(s => String(s).trim()).filter(Boolean)
+  } else if (typeof v === 'string' && v.trim()) {
+    names = [v.trim()]
+  }
+
+  if (names.length === 0) {
+    if (typeof a.assignee === 'string' && a.assignee.trim()) names = [a.assignee.trim()]
+    else if (typeof a.owner === 'string' && a.owner.trim()) names = [a.owner.trim()]
+  }
+
+  // 중복 제거
+  return names.filter((n, i, arr) => arr.indexOf(n) === i)
 }
 
 function openDetail(a: T) {
