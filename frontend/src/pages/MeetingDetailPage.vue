@@ -87,10 +87,6 @@ onActivated(() => { void refetch?.() })
           </template>
         </div>
 
-        <span class="text-sm px-2 py-1 rounded-full border">
-          {{ meeting?.status }}
-        </span>
-
         <div class="ml-auto flex items-center gap-2">
           <RouterLink
             to="/"

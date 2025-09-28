@@ -11,26 +11,29 @@
 
       <!-- Header -->
       <div class="px-5 py-4 border-b flex items-center gap-2">
-        <div class="text-[18px] font-semibold truncate leading-6">
+        <div class="flex-1 min-w-0 text-[18px] font-semibold leading-6">
           <template v-if="editingTitle">
-            <input
-              v-model="draftTitle"
-              class="border rounded px-2 py-1 text-base font-semibold bg-white dark:bg-zinc-900"
-              @keyup.enter="saveEditTitle"
-              @keydown.esc="cancelEditTitle"
+            <div class="flex items-center gap-2 w-full">
+              <input
+                v-model="draftTitle"
+                class="w-96 border rounded px-3 py-2 text-lg font-semibold bg-white dark:bg-zinc-900"
+                @keyup.enter="saveEditTitle"
+                @keydown.esc="cancelEditTitle"
               @blur="cancelEditTitle"
               autofocus
-            />
-            <button
-              class="ml-2 px-2.5 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
-              type="button"
-              @mousedown.prevent="saveEditTitle"
-            >
-              저장
-            </button>
+              />
+              <button
+                class="px-2.5 py-1.5 rounded-lg border text-sm hover:bg-gray-50"
+                type="button"
+                @mousedown.prevent="saveEditTitle"
+              >
+                저장
+              </button>
+            </div>
           </template>
           <template v-else>
-            <span class="cursor-pointer" @click="startEditTitle" title="제목 수정">
+            <span class="cursor-pointer truncate block" @click="startEditTitle" title="제목 수정">
+
               {{ headerTitle }}
             </span>
           </template>
