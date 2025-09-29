@@ -12,7 +12,7 @@ from .. import database, models
 
 router = APIRouter(prefix="/handoff")
 
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://127.0.0.1:8000")
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://15.164.234.96")
 UPLOAD_TTL_SEC = int(os.getenv("UPLOAD_TTL_SEC", "1200"))
 
 class StartReq(BaseModel):
@@ -25,11 +25,16 @@ def get_db():
     finally:
         db.close()
 
+
+
+
+
+
 @router.post("/start")
 def start_handoff(payload: StartReq = Body(default=None), db: Session = Depends(get_db)):
     name = (payload.name or "").strip() if payload else None
     m = models.Meeting(
-        name=name,  # ← ★ 여기서 저장!
+        name=name,  # ← 여기서 저장!
         status=models.MeetingStatus.PENDING_UPLOAD,
         progress=0,
         upload_token=uuid.uuid4().hex[:16],
@@ -38,8 +43,8 @@ def start_handoff(payload: StartReq = Body(default=None), db: Session = Depends(
     db.add(m); db.commit(); db.refresh(m)
 
     q = urllib.parse.urlencode({"mid": str(m.id), "t": m.upload_token})
-    # ★ SPA 라우트로 보낼 것 (백엔드 HTML 아님)
-    mobile_url = f"{PUBLIC_BASE_URL}/m/upload?{q}"
+    # 기존 PUBLIC_BASE_URL 또는 요청에서 받은 base_url을 프런트 도메인으로 수정
+    mobile_url = f"{PUBLIC_BASE_URL}/m/upload?{q}"  # /m/upload 경로로 변경
     buf = io.BytesIO()
     qrcode.make(mobile_url).save(buf, format="PNG")
     qr_data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
@@ -51,6 +56,7 @@ def start_handoff(payload: StartReq = Body(default=None), db: Session = Depends(
         "mobile_url": mobile_url,
         "qr_data_uri": qr_data_uri,  # ← 이것만 img src로 쓰면 됨
     }
+
 
 @router.get("/m/upload", response_class=HTMLResponse)
 def mobile_upload_page(mid: str, t: str):
@@ -162,6 +168,3 @@ btn.onclick = async () => {
     html = html.replace("__MID__", json.dumps(mid)).replace("__TOKEN__", json.dumps(t))
     return HTMLResponse(content=html, status_code=200)
 
-# apps/api/routers/handoff.py
-from fastapi.responses import HTMLResponse
-import base64, io, qrcode, urllib.parse
