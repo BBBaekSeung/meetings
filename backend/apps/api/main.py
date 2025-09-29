@@ -82,7 +82,6 @@ def health():
 # 라우터 마운트
 app.include_router(meetings.router, tags=["meetings"])
 app.include_router(actions.router,  tags=["actions"])
-app.include_router(exports.router,  tags=["exports"])
 app.include_router(handoff.router,  tags=["handoff"])
 app.include_router(vote_router,  tags=["vote"])
 app.include_router(checklist.router, tags=["checklist"])
