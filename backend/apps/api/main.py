@@ -9,7 +9,7 @@ from . import models
 models.Base.metadata.create_all(bind=engine)
 
 # 라우터 import (모델 import보다 늦어도 OK)
-from .routers import meetings, actions, exports, handoff, checklist
+from .routers import meetings, actions, handoff, checklist
 from .routers.vote import router as vote_router
 
 
@@ -17,6 +17,8 @@ from .routers.vote import router as vote_router
 FRONT_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://15.164.234.96:5173",  # ← EC2 IP + 포트(필수)
+    "http://15.164.234.96:5174",  # ← 가끔 5174로 뜬 경우 대비(옵션)
     "http://ec2-15-164-234-96.ap-northeast-2.compute.amazonaws.com",  # ← 추가
 ]
 

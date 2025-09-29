@@ -28,8 +28,8 @@ MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 # ─────────────────────────────────────────────────────────────
 def _strip_md_fences(s: str) -> str:
     s = (s or "").strip()
-    s = re.sub(r"^```(?:json)?\s*", "", s, flags=re.IGNORECASE)
-    s = re.sub(r"\s*```$", "", s)
+    s = re.sub(r"^(?:json)?\s*", "", s, flags=re.IGNORECASE)
+    s = re.sub(r"\s*$", "", s)
     return s.strip()
 
 def _extract_last_json_block(s: str) -> str:
@@ -119,6 +119,53 @@ def _parse_names(value: Any) -> List[str]:
             seen.add(n); uniq.append(n)
     return uniq
 
+
+def _response_to_text(resp) -> str:
+    # 1) 기본 경로
+    t = getattr(resp, "text", None)
+    if isinstance(t, str) and t.strip():
+        return t
+
+    # 2) candidates -> content.parts[*].text 순회
+    try:
+        cands = getattr(resp, "candidates", []) or []
+        for c in cands:
+            content = getattr(c, "content", None)
+            parts = getattr(content, "parts", []) if content else []
+            chunks = []
+            for p in parts:
+                txt = getattr(p, "text", None)
+                if not txt and isinstance(p, dict):
+                    txt = p.get("text")
+                if txt:
+                    chunks.append(str(txt))
+            if chunks:
+                return "\n".join(chunks)
+    except Exception:
+        pass
+
+    # 3) dict로 직렬화해서 가장 긴 text 필드 찾기
+    try:
+        d = resp.to_dict() if hasattr(resp, "to_dict") else None
+        if d:
+            stack = [d]; best = ""
+            while stack:
+                cur = stack.pop()
+                if isinstance(cur, dict):
+                    for k, v in cur.items():
+                        if k == "text" and isinstance(v, str) and len(v) > len(best):
+                            best = v
+                        elif isinstance(v, (dict, list)):
+                            stack.append(v)
+                elif isinstance(cur, list):
+                    stack.extend(cur)
+            if best.strip():
+                return best
+    except Exception:
+        pass
+
+    return ""
+
 # ─────────────────────────────────────────────────────────────
 # 메인 함수
 # ─────────────────────────────────────────────────────────────
@@ -157,7 +204,8 @@ def summarize_and_extract(transcript: str) -> dict:
     # 3) 프롬프트
     prompt = f"""
 너는 한국어 회의록을 구조화하는 '회의록 전문가'다. 아래 입력을 읽고 **반드시 유효한 JSON 객체만** 반환하라.
-마크다운 코드펜스(````), 설명, 여분 텍스트는 절대 출력하지 마라.
+마크다운 코드펜스(
+), 설명, 여분 텍스트는 절대 출력하지 마라.
 
 [INPUT - JSON]
 {json.dumps(payload, ensure_ascii=False)}
@@ -166,18 +214,29 @@ def summarize_and_extract(transcript: str) -> dict:
 - 입력은 transcript(전체 텍스트)와 segments(화자 분리 배열)로 구성될 수 있다.
 - 사전 정리(출력 포함 금지): 전체 segments를 훑어 speaker.label → 실명/직책/팀명 매핑 테이블을 내부적으로 만든다. 소개 패턴(“저는 OOO입니다”, “OOO 팀장 OOO”)과 호칭(“OOO님”, “팀장님”)을 근거로 갱신한다.
 - 담당자 추출 우선순위(텍스트 근거만):
-1) 작업 문장에 명시된 실명/직책/팀명이 있으면 그 값을 사용.
-2) 화자 1인칭(“제가/저/우리가 … 하겠습니다/맡겠습니다/처리합니다”)이면, 해당 speaker의 매핑된 실명/직책을 사용(없으면 label).
-3) 화자 3인칭(“민수가/CS팀이 처리”)면 그 이름/팀을 사용.
-4) 위가 불가하면 speaker.label을 사용.
-5) 정말 배정 표현이 없을 때만 assignee=null로 둔다.
+  1) 작업 문장에 명시된 실명/직책/팀명이 있으면 그 값을 사용.
+  2) 화자 1인칭(“제가/저/우리가 … 하겠습니다/맡겠습니다/처리합니다”)이면, 해당 speaker의 매핑된 실명/직책을 사용(없으면 label).
+  3) 화자 3인칭(“민수가/CS팀이 처리”)면 그 이름/팀을 사용.
+  4) 위가 불가하면 speaker.label을 사용.
+  5) 정말 배정 표현이 없을 때만 assignee=null로 둔다.
 - 실행 가능한 작업만 action_items에 포함하고, 이미 끝났거나 추상적인 문구는 제외.
 - 요약은 정보 위주 세 문단으로, 각 2~4문장, 마침표로 종결.
+- **요약(summary) 배열 안에는 다음 항목들을 반드시 포함한다:**
+  1) "문단1","문단2","문단3" → 세 문단 요약
+  2) "[📝주요 논의사항]" 헤더 문자열
+  3) 불릿("- ")으로 핵심 논의사항 나열 (3~8개)
 - 금지: 새로운 이름을 창작하거나 외부 지식을 사용하지 말 것.
 
 [OUTPUT SCHEMA - keys must match exactly]
 {{
-  "summary": ["문단1","문단2","문단3"],
+  "summary": [
+    "문단1",
+    "문단2",
+    "문단3",
+    "[📌주요 논의사항]",
+    "- 불릿1",
+    "- 불릿2"
+  ],
   "action_items": [
     {{ "task": "할 일", "assignee": "담당자|null", "due_date": "YYYY-MM-DD|null" }}
   ]
@@ -197,7 +256,7 @@ def summarize_and_extract(transcript: str) -> dict:
 [FINAL INSTRUCTIONS]
 - 출력은 오직 위 스키마의 **JSON 객체 한 개**.
 - 키 추가/변경 금지, 값 누락 금지.
-    """.strip()
+""".strip()
 
     try:
         model = genai.GenerativeModel(MODEL_NAME)
@@ -208,7 +267,9 @@ def summarize_and_extract(transcript: str) -> dict:
                 temperature=0.2,
             ),
         )
-        raw = (response.text or "").strip()
+        raw = _response_to_text(response).strip()
+        if not raw:
+            raise ValueError("LLM empty response")
         cleaned = _extract_last_json_block(_strip_md_fences(raw))
         data = json.loads(cleaned)
 
@@ -218,14 +279,28 @@ def summarize_and_extract(transcript: str) -> dict:
             raise ValueError(f"LLM JSON top-level is not an object: {type(data).__name__}")
 
         # ---- summary 정규화 ----
+
         summary_field = obj.get("summary")
+
         if isinstance(summary_field, str):
-            summary = _sentences3(summary_field)
+            # 문자열이면 문장 3개 정도로만 쪼개서 문단화
+            paras = _sentences3(summary_field)
+            while len(paras) < 3:
+                paras.append("내용 없음")
+            summary = paras
         elif isinstance(summary_field, list):
-            summary = [re.sub(r'\s+', ' ', str(s)).strip() for s in summary_field if str(s).strip()]
-            summary = summary[:3] if summary else ["요약 없음"]
+            # 배열이면 첫 3개는 문단, 나머지는 전부 보존
+            cleaned = [re.sub(r'\s+', ' ', str(s)).strip() for s in summary_field if str(s).strip()]
+            if not cleaned:
+                summary = ["요약 없음", "요약 없음", "요약 없음"]
+            else:
+                # 최소 3개는 보장
+                while len(cleaned) < 3:
+                    cleaned.append("내용 없음")
+                summary = cleaned   # ✅ 잘라내지 않고 그대로 사용
         else:
-            summary = ["요약 없음"]
+            summary = ["요약 없음", "요약 없음", "요약 없음"]
+
 
         # ---- actions 정규화 ----
         raw_items = _to_list(obj.get("action_items"))
@@ -274,7 +349,6 @@ def summarize_and_extract(transcript: str) -> dict:
                 seg_lines = []
                 for s in payload["segments"]:
                     if not isinstance(s, dict):
-                        # 문자열/기타 타입이면 스킵
                         continue
                     sp = s.get("speaker") or {}
                     if not isinstance(sp, dict):
@@ -286,10 +360,13 @@ def summarize_and_extract(transcript: str) -> dict:
                         seg_lines.append(line)
                 base = " ".join(seg_lines)
             except Exception:
-                # 어떤 예외가 나더라도 폴백은 그대로 진행
                 pass
 
+        fallback = _sentences3(base or "")
+        while len(fallback) < 3:
+            fallback.append("내용 없음")
+
         return {
-            "summary": _sentences3(base or ""),
+            "summary": fallback,
             "actions": []
         }

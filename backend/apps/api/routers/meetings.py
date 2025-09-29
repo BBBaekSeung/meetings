@@ -450,26 +450,6 @@ async def upload_audio(
         raise HTTPException(status_code=500, detail=f"UPLOAD_ERROR:{type(e).__name__}:{e}")
 
 
-
-@router.post("/{meeting_id}/upload-token")
-def issue_upload_token(meeting_id: str, db: Session = Depends(get_db)):
-    m = require_meeting(db, meeting_id)
-
-    # 이미 처리 중/완료면 재업로드 목적이 명확하지 않으므로 기본은 409
-    if m.status not in (models.MeetingStatus.PENDING_UPLOAD,):
-        raise HTTPException(status_code=409, detail="CANNOT_REISSUE_TOKEN_IN_CURRENT_STATE")
-
-    m.upload_token = uuid.uuid4().hex[:16]
-    m.token_expires_at = now_utc() + timedelta(seconds=UPLOAD_TTL_SEC)
-    db.commit()
-    db.refresh(m)
-    return {
-        "id": m.id,
-        "upload_token": m.upload_token,
-        "upload_token_expires_in": UPLOAD_TTL_SEC,
-    }
-
-
 # ========== 2-1) (준실시간) 청크 업로드 ==========
 @router.post("/{meeting_id}/chunk", status_code=202)
 async def upload_chunk(

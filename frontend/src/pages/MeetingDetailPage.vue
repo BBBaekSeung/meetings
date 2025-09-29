@@ -154,7 +154,7 @@ onActivated(() => { void refetch?.() })
   <!-- 카드: 그대로 전체 너비 사용 -->
   <div class="p-4 rounded-2xl border bg-white h-full">
     <h2 class="text-lg font-semibold mb-3">
-      {{ leftTab === 'summary' ? '요약(3문단)' : '전체 스크립트' }}
+      {{ leftTab === 'summary' ? '요약(3문단) & 주요 논의사항' : '전체 스크립트' }}
     </h2>
 
     <div v-if="leftTab === 'summary'">
