@@ -10,7 +10,6 @@ watch(() => props.actions, (arr) => { actions.value = arr ? [...arr] : [] }, { i
 
 const open = ref(false)
 const selected = ref<T | null>(null)
-const emit = defineEmits<{ (e: 'saved', payload: T): void }>()
 
 const STATUS_CLASS = STATUS_BADGE_TW
 
